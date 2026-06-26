@@ -19,7 +19,13 @@ from src.optimizer import FormulaOptimizer
 from src.disease_advice import get_disease_advice
 
 # ==================== matplotlib 中文配置 ====================
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+# 优先级：本地 Windows 字体 → 云端 Linux 字体 → 西文回退
+plt.rcParams["font.sans-serif"] = [
+    "SimHei",
+    "Microsoft YaHei",
+    "WenQuanYi Zen Hei",
+    "DejaVu Sans",
+]
 plt.rcParams["axes.unicode_minus"] = False
 
 # ==================== 页面配置 ====================
