@@ -1,0 +1,8 @@
+launch.py
+run.bat
+*.png
+*.jpg
+__pycache__/
+.claude/
+output/
+*.pyc

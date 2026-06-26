@@ -1,0 +1,6 @@
+streamlit>=1.50
+pandas>=2.0
+PuLP>=3.0
+matplotlib>=3.5
+numpy>=1.24
+openpyxl>=3.0
