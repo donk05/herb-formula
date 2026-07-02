@@ -17,6 +17,10 @@ from difflib import SequenceMatcher
 from src.data_loader import DataLoader
 from src.optimizer import FormulaOptimizer
 from src.disease_advice import get_disease_advice
+from src.graph_builder import KnowledgeGraphBuilder
+from src.matcher import DiseaseMatcher
+from src.scorer import SubstanceScorer
+from src.constraint_checker import ConstraintChecker
 
 # ==================== matplotlib 中文配置 ====================
 # 优先级：本地 Windows 字体 → 云端 Linux 字体 → 西文回退
@@ -324,9 +328,33 @@ def get_optimizer(_file_hash: str):
     return FormulaOptimizer()
 
 
+@st.cache_resource
+def get_graph_builder(_file_hash: str):
+    return KnowledgeGraphBuilder(get_loader(_file_hash))
+
+
+@st.cache_resource
+def get_matcher(_file_hash: str):
+    return DiseaseMatcher(get_loader(_file_hash))
+
+
+@st.cache_resource
+def get_scorer(_file_hash: str):
+    return SubstanceScorer(get_loader(_file_hash))
+
+
+@st.cache_resource
+def get_constraint_checker(_file_hash: str):
+    return ConstraintChecker(get_loader(_file_hash))
+
+
 file_hash = _data_mtime()
 loader = get_loader(file_hash)
 optimizer = get_optimizer(file_hash)
+graph_builder = get_graph_builder(file_hash)
+matcher = get_matcher(file_hash)
+scorer = get_scorer(file_hash)
+constraint_checker = get_constraint_checker(file_hash)
 all_diseases = sorted(loader.disease_to_targets.keys())
 
 
@@ -447,6 +475,45 @@ if selected_disease is None:
     st.info("👈 请在左侧边栏搜索并选择一种疾病，然后点击「🌿 生成智能配方」按钮。")
     st.stop()
 
+# ==================== 知识图谱 / 匹配 / 评分预览 ====================
+st.markdown("---")
+st.markdown("### 🧭 数据链路与候选分析")
+
+graph_summary = graph_builder.get_graph_summary()
+match_report = matcher.get_match_report(selected_disease)
+score_rows = scorer.score(selected_disease)
+
+g_col1, g_col2, g_col3, g_col4, g_col5 = st.columns(5)
+with g_col1:
+    st.metric("疾病节点", graph_summary["疾病节点"])
+with g_col2:
+    st.metric("靶点节点", graph_summary["靶点节点"])
+with g_col3:
+    st.metric("成分节点", graph_summary["成分节点"])
+with g_col4:
+    st.metric("原料节点", graph_summary["原料节点"])
+with g_col5:
+    st.metric("图谱关系", graph_summary["关系边"])
+
+with st.expander(f"🔎 「{selected_disease}」疾病匹配链路", expanded=False):
+    stat = match_report["统计"]
+    st.caption(
+        f"匹配到 {stat['靶点数']} 个靶点、{stat['成分数']} 个成分、"
+        f"{stat['候选原料数']} 种候选原料。"
+    )
+    if match_report["成分"]:
+        st.markdown("#### 靶点与有效成分")
+        st.dataframe(match_report["成分"], use_container_width=True, hide_index=True)
+    if match_report["候选原料"]:
+        st.markdown("#### 候选原料明细")
+        st.dataframe(match_report["候选原料"], use_container_width=True, hide_index=True)
+
+with st.expander("📈 候选原料评分", expanded=False):
+    if score_rows:
+        st.dataframe(score_rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("当前疾病没有可评分的候选原料。")
+
 if not generate_btn:
     st.stop()
 
@@ -479,6 +546,24 @@ with col3:
     # 协同增效倍数：有协同奖励的物质数
     syn_count = sum(1 for item in result["配方"] if item["其中协同奖励_mg"] > 0)
     st.metric("协同增效物质数", f"{syn_count} 种")
+
+check_report = constraint_checker.check(
+    result,
+    formula_type=formula_type,
+    min_dose=min_dose,
+)
+if check_report["通过"]:
+    st.success("✅ 约束检查通过：剂型总量、最低用量与靶点起效剂量均满足。")
+else:
+    st.warning("⚠️ 约束检查发现问题，请查看下方明细。")
+
+with st.expander("🧾 剂量计算与约束检查明细", expanded=False):
+    st.json(check_report["明细"])
+    if check_report["问题"]:
+        for issue in check_report["问题"]:
+            st.markdown(f"- {issue}")
+    else:
+        st.markdown("- 未发现约束问题。")
 
 # ==================== 结果 + 图表区 ====================
 st.markdown("---")
