@@ -268,52 +268,65 @@ KNOWLEDGE_BASE: Dict[str, Dict] = {
 
 # ==================== AI 增强（可选） ====================
 
-def get_claude_advice(disease_name: str) -> Optional[str]:
+def get_ai_advice(disease_name: str, graph_context: str = "") -> Optional[str]:
     """
-    调用 Claude API 获取 AI 建议。
-    需要设置环境变量 ANTHROPIC_API_KEY。
-    返回 None 表示不可用，回退到内置知识库。
+    调用免费 AI 获取疾病建议。
+    优先 Groq（免费 Llama）→ DeepSeek → Claude。
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        return None
+    prompt = (
+        f"你是资深中西医结合与药食同源专家。请为「{disease_name}」患者"
+        f"提供简明建议，中文回答，控制在 300 字以内，通俗易懂：\n"
+        f"1. 注意事项（3-5 条）\n"
+        f"2. 推荐饮食与药食同源物质（3-5 种）\n"
+        f"3. 生活调理建议（2-3 条）"
+    )
+    if graph_context:
+        prompt += f"\n\n参考（来自知识图谱）：{graph_context}"
 
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        prompt = (
-            f"你是一位资深的中西医结合专家，请为「{disease_name}」患者"
-            f"提供简明的建议，包括：\n"
-            f"1. 该疾病的注意事项（3-5 条）\n"
-            f"2. 推荐的饮食和药食同源物质（3-5 种）\n"
-            f"3. 生活调理建议（2-3 条）\n"
-            f"请用中文回答，控制在 300 字以内，使用通俗易懂的语言。"
-        )
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return resp.content[0].text
-    except Exception:
-        return None
+    # Groq（免费，OpenAI 兼容）
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if groq_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+            resp = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500, temperature=0.7,
+            )
+            return resp.choices[0].message.content
+        except Exception:
+            pass
+
+    # DeepSeek（备选）
+    ds_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if ds_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com")
+            resp = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500,
+            )
+            return resp.choices[0].message.content
+        except Exception:
+            pass
+
+    return None
 
 
-def get_disease_advice(disease_name: str) -> Optional[Dict]:
+def get_disease_advice(disease_name: str, graph_context: str = "") -> Optional[Dict]:
     """
-    获取疾病建议。优先尝试 Claude API，不可用时使用内置知识库。
-
-    Returns:
-        None 表示该疾病无数据；否则返回包含建议的字典。
+    获取疾病建议。
+    内置知识库优先 → AI 实时生成（Groq 免费 Llama）。
     """
-    # 先查内置知识库
     builtin = KNOWLEDGE_BASE.get(disease_name)
     if builtin:
         return {"来源": "内置知识库", **builtin}
 
-    # 不在知识库中，尝试 AI
-    ai_text = get_claude_advice(disease_name)
+    ai_text = get_ai_advice(disease_name, graph_context)
     if ai_text:
-        return {"来源": "Claude AI", "AI建议": ai_text}
+        return {"来源": "AI 实时生成 (Groq Llama)", "AI建议": ai_text}
 
     return None
