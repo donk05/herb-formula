@@ -135,15 +135,10 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
 </style>""", unsafe_allow_html=True)
 
 # ==================== 数据加载 ====================
-import hashlib
-def _data_mtime():
-    p = os.path.join(_project_root, "data", "药食同源_真实关系链（去重）(1).xlsx")
-    return hashlib.md5(open(p, "rb").read()).hexdigest() if os.path.exists(p) else "no"
+@st.cache_resource(ttl=3600)
+def get_loader(): return GraphDataLoader()
 
-@st.cache_resource
-def get_loader(_h): return GraphDataLoader()
-
-loader = get_loader(_data_mtime())
+loader = get_loader()
 all_diseases = loader.all_diseases_cn
 all_diseases_default = loader.all_diseases_cn_quality
 

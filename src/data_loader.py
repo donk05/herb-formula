@@ -482,6 +482,20 @@ class GraphDataLoader:
     # ===================== 数据加载 =====================
 
     def _load_and_build(self) -> None:
+        self._cache_path = self.filepath.parent / "_graph_cache.pkl"
+        # 尝试从 pickle 缓存加载
+        if self._cache_path.exists() and self._cache_path.stat().st_mtime > self.filepath.stat().st_mtime:
+            try:
+                import pickle
+                with open(cache_path, "rb") as f:
+                    cache = pickle.load(f)
+                for key, val in cache.items():
+                    setattr(self, key, val)
+                print(f"从缓存加载图谱: {len(self.all_diseases_cn)} 种疾病, {len(self.all_herbs)} 种中药")
+                return
+            except Exception:
+                pass  # 缓存损坏，回退 Excel 加载
+
         xls = pd.ExcelFile(self.filepath)
         sheets = xls.sheet_names
 
@@ -512,6 +526,27 @@ class GraphDataLoader:
         ]
 
         self._build_indices()
+
+        # 保存缓存供下次快速加载
+        try:
+            import pickle
+            cache = {
+                "en_to_cn": self.en_to_cn, "cn_to_en": self.cn_to_en,
+                "disease_to_targets": self.disease_to_targets,
+                "target_to_compounds": self.target_to_compounds,
+                "compound_to_herbs": self.compound_to_herbs,
+                "herb_to_compounds": self.herb_to_compounds,
+                "target_names": self.target_names,
+                "compound_names": self.compound_names,
+                "all_diseases_cn": self.all_diseases_cn,
+                "all_english_diseases": self.all_english_diseases,
+                "all_diseases_cn_quality": self.all_diseases_cn_quality,
+                "all_herbs": self.all_herbs,
+            }
+            with open(self._cache_path, "wb") as f:
+                pickle.dump(cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            pass
 
     # ===================== 构建索引 =====================
 
