@@ -285,6 +285,12 @@ def get_ai_advice(disease_name: str, graph_context: str = "") -> Optional[str]:
 
     # Groq（免费，OpenAI 兼容）
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        try:
+            import streamlit as st
+            groq_key = st.secrets.get("GROQ_API_KEY", "").strip()
+        except Exception:
+            pass
     if groq_key:
         try:
             from openai import OpenAI
@@ -300,6 +306,12 @@ def get_ai_advice(disease_name: str, graph_context: str = "") -> Optional[str]:
 
     # DeepSeek（备选）
     ds_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if not ds_key:
+        try:
+            import streamlit as st
+            ds_key = st.secrets.get("DEEPSEEK_API_KEY", "").strip()
+        except Exception:
+            pass
     if ds_key:
         try:
             from openai import OpenAI
