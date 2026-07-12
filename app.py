@@ -10,6 +10,7 @@ if _project_root not in sys.path: sys.path.insert(0, _project_root)
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
+import json, time, urllib.request, urllib.error
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -132,6 +133,107 @@ details[data-testid="stExpander"] { border-radius: 14px!important; border: 1.5px
 
 /* === Selectbox === */
 div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: #C8BFAA!important; }
+
+/* === 膳食助手聊天容器 === */
+.chat-container {
+  background: linear-gradient(160deg, rgba(255,255,255,0.72) 0%, rgba(245,242,235,0.58) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 24px;
+  padding: 1.6rem 1.4rem 1.2rem;
+  margin: 1.4rem 0;
+  border: 1.5px solid rgba(129,199,132,0.35);
+  box-shadow: 0 0 32px rgba(129,199,132,0.10), 0 6px 24px rgba(0,0,0,0.04),
+              inset 0 1px 0 rgba(255,255,255,0.6);
+  animation: dietChatGlow 4s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
+}
+.chat-container::before {
+  content: "";
+  position: absolute;
+  top: -70px; right: -50px;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(139,195,74,0.07) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes dietChatGlow {
+  0%, 100% { box-shadow: 0 0 32px rgba(129,199,132,0.08), 0 6px 24px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.6); border-color: rgba(129,199,132,0.28); }
+  50% { box-shadow: 0 0 56px rgba(129,199,132,0.20), 0 6px 28px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7); border-color: rgba(129,199,132,0.50); }
+}
+
+/* === 聊天消息气泡 === */
+.chat-msg-user, .chat-msg-ai {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 0.9rem;
+  animation: msgFadeIn 0.35s ease-out;
+}
+@keyframes msgFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.chat-avatar {
+  font-size: 1.4rem;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.7);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.chat-bubble {
+  max-width: 82%;
+  padding: 0.75rem 1rem;
+  border-radius: 16px;
+  font-size: 0.93rem;
+  line-height: 1.75;
+  word-break: break-word;
+}
+.chat-msg-user .chat-bubble {
+  background: linear-gradient(135deg, #E8F5E9, #F1F8E9);
+  border: 1px solid rgba(46,125,50,0.12);
+  border-bottom-right-radius: 4px;
+}
+.chat-msg-ai .chat-bubble {
+  background: linear-gradient(135deg, #FFFFFF, #FDFBF7);
+  border: 1px solid rgba(0,0,0,0.06);
+  border-bottom-left-radius: 4px;
+}
+.chat-msg-user { flex-direction: row-reverse; }
+.chat-msg-user .chat-bubble { text-align: right; }
+
+/* === 内联输入区域 === */
+[data-testid="stForm"] {
+  margin-top: 0.8rem;
+  border: none !important;
+  padding: 0 !important;
+}
+.chat-container textarea {
+  border-radius: 14px !important;
+  border: 1.5px solid rgba(129,199,132,0.35) !important;
+  background: rgba(255,255,255,0.65) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-size: 0.92rem !important;
+  resize: none !important;
+}
+.chat-container textarea:hover {
+  border-color: rgba(67,160,71,0.50) !important;
+  box-shadow: 0 3px 16px rgba(46,125,50,0.08);
+}
+.chat-container textarea:focus {
+  border-color: #43A047 !important;
+  box-shadow: 0 0 0 4px rgba(67,160,71,0.10) !important;
+}
+.chat-container button[kind="primary"] {
+  min-height: 44px;
+  font-size: 1.15rem;
+}
+
 </style>""", unsafe_allow_html=True)
 
 # ==================== 数据加载 ====================
@@ -147,6 +249,91 @@ def fuzzy_search(query, candidates, top_k=8):
     scored = [(c, SequenceMatcher(None, query.lower(), c.lower()).ratio() + (0.5 if query.lower() in c.lower() else 0)) for c in candidates]
     scored.sort(key=lambda x: x[1], reverse=True)
     return [c for c, s in scored[:top_k] if s > 0]
+
+# ==================== Gemini 膳食助手 API ====================
+DIET_SYSTEM_INSTRUCTION = (
+    '你是一位专注于「药食同源」与「大众营养膳食」的温和科普助手。'
+    '你的核心纪律：\n'
+    '1. 严禁推荐任何处方药、非处方药、烟酒、或具有毒副作用的危险中药。\n'
+    '2. 只提供温和、健康、日常的食疗建议（如：多吃膳食纤维、温水冲饮、多吃新鲜蔬果、保持规律作息）。\n'
+    '3. 语言必须干净、阳光、积极向上、通俗易懂，适合包括青少年在内的全年龄段人群。\n'
+    '4. 所有回答必须附带温馨提示：「本建议仅为日常膳食营养科普，不作为临床医疗诊断依据，如有身体不适请及时就医。」'
+    '5. 优先结合中医「药食同源」理念，推荐山药、枸杞、红枣、薏米、桂圆、莲子、百合、茯苓等常见食材。'
+)
+
+
+def _diet_fallback(disease_context=""):
+    """当 Gemini API 不可用时的通用提示。"""
+    disease_hint = f"当前查询疾病：「{disease_context}」。" if disease_context else ""
+
+    return (
+        f"{disease_hint}"
+        "AI 膳食助手暂未配置 API 密钥，目前无法提供针对性的膳食建议。\n\n"
+        "💡 **温馨提示**：请在环境变量或 `.streamlit/secrets.toml` 中配置 `GEMINI_API_KEY`，"
+        "即可启用基于 Gemini 2.5 Flash 的智能膳食分析。\n\n"
+        "---\n"
+        "📝 本建议仅为日常膳食营养科普，不作为临床医疗诊断依据，如有身体不适请及时就医。"
+    )
+
+
+def ask_gemini_diet_assistant(messages, disease_context=""):
+    """向 Gemini 2.5 Flash API 发送请求，含指数退避重试（最多 5 次）。"""
+    api_key = "sk-9fb949b3a2e1476eb832f8ca446e24c5"
+
+    system_instruction = DIET_SYSTEM_INSTRUCTION
+    if disease_context:
+        system_instruction += f"\n\n{disease_context}"
+
+    if not api_key:
+        return _diet_fallback(disease_context)
+
+    # 构建 Groq API 请求体（OpenAI 兼容格式）
+    api_messages = [{"role": "system", "content": system_instruction}]
+    for msg in messages:
+        role = "user" if msg["role"] == "user" else "assistant"
+        api_messages.append({"role": role, "content": msg["content"]})
+
+    payload = json.dumps({
+        "model": "deepseek-chat",
+        "messages": api_messages,
+        "temperature": 0.7,
+        "max_tokens": 800,
+    }).encode("utf-8")
+
+    url = "https://api.deepseek.com/v1/chat/completions"
+
+    last_error = ""
+    for attempt in range(5):
+        try:
+            req = urllib.request.Request(url, data=payload, headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            })
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"]
+        except urllib.error.HTTPError as e:
+            last_error = f"{e.code} {e.reason}"
+            try:
+                err_body = e.read().decode("utf-8")[:500]
+                last_error += f" — {err_body}"
+            except Exception:
+                pass
+            if e.code == 429 and attempt < 4:
+                time.sleep(2 ** attempt)
+                continue
+            if attempt < 4:
+                time.sleep(2 ** attempt)
+                continue
+        except Exception as e:
+            last_error = str(e)[:500]
+            if attempt < 4:
+                time.sleep(2 ** attempt)
+                continue
+
+    return f"❌ API 调用失败（已重试 5 次）\n\n错误信息：{last_error}\n\n---\n📝 请检查 API Key 是否有效或网络是否正常。"
+
+    return _diet_fallback(disease_context)
 
 # ==================== 侧边栏 ====================
 with st.sidebar:
@@ -170,6 +357,12 @@ with st.sidebar:
     top_k = st.slider("📊 展示 Top N 中药", 5, 30, 15)
     generate_btn = st.button("🌿 查询知识图谱", type="primary", use_container_width=True, disabled=(selected_disease is None))
 
+    # 将查询参数持久化到 session_state，防止 chat_input 重跑时丢失
+    if generate_btn and selected_disease:
+        st.session_state.query_disease = selected_disease
+        st.session_state.query_top_k = top_k
+        st.session_state.query_active = True
+
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
@@ -188,10 +381,20 @@ st.markdown(
     '</div>', unsafe_allow_html=True,
 )
 
-if selected_disease is None:
-    st.info("👈 请在左侧搜索并选择一种疾病，然后点击「🌿 查询知识图谱」按钮")
+# 初始化查询持久化状态
+if "query_active" not in st.session_state:
+    st.session_state.query_active = False
+
+if not st.session_state.query_active:
+    if selected_disease is None:
+        st.info("👈 请在左侧搜索并选择一种疾病，然后点击「🌿 查询知识图谱」按钮")
+    else:
+        st.info("👈 请点击「🌿 查询知识图谱」按钮开始分析")
     st.stop()
-if not generate_btn: st.stop()
+
+# 从 session_state 取持久化的查询参数（chat_input 重跑时不会丢失）
+selected_disease = st.session_state.query_disease
+top_k = st.session_state.query_top_k
 
 # ==================== 查询 ====================
 with st.spinner("🌿 知识图谱检索中，深度分析疾病-靶点-化合物-中药关系链…"):
@@ -325,6 +528,55 @@ if advice:
                 st.markdown(f'<div style="background:#F5F0FA;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.3rem;font-size:0.88rem;color:#555;border:1.5px solid #E0D5F0;display:inline-block;margin-right:8px;">💡 {item}</div>', unsafe_allow_html=True)
 else:
     st.info("该疾病暂无健康建议数据。Groq AI 密钥未配置或调用失败。")
+
+# ==================== 药食同源 · AI 健康膳食助手 ====================
+# 初始化聊天历史
+if "diet_messages" not in st.session_state:
+    st.session_state.diet_messages = []
+
+# 对话容器
+st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+
+# 渲染历史消息
+for msg in st.session_state.diet_messages:
+    role_class = "chat-msg-user" if msg["role"] == "user" else "chat-msg-ai"
+    avatar = "🧑" if msg["role"] == "user" else "🌿"
+    st.markdown(
+        f'<div class="{role_class}"><span class="chat-avatar">{avatar}</span>'
+        f'<div class="chat-bubble">{msg["content"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+# 内联输入区域（不悬浮）
+with st.form("diet_chat_form", clear_on_submit=True, border=False):
+    cols = st.columns([9, 1], gap="small")
+    with cols[0]:
+        user_input = st.text_area(
+            "输入",
+            placeholder="💬 询问关于该亚健康状态的日常膳食调理建议...",
+            label_visibility="collapsed",
+            height=68,
+            key="diet_chat_input",
+        )
+    with cols[1]:
+        st.markdown("<br>", unsafe_allow_html=True)
+        submitted = st.form_submit_button("📨", use_container_width=True, type="primary")
+
+if submitted and user_input.strip():
+    prompt = user_input.strip()
+    st.session_state.diet_messages.append({"role": "user", "content": prompt})
+    with st.spinner("🌿 AI 正在为您生成膳食建议..."):
+        herbs_top = ranked[:5] if ranked else []
+        disease_ctx = (
+            f"当前查询疾病：「{selected_disease}」\n"
+            f"知识图谱：{stats['关联靶点数']} 个蛋白质靶点、{stats['关联化合物数']} 种化合物、{stats['相关中药数']} 种药食同源中药。\n"
+            f"图谱 Top 5 推荐：{'、'.join(h['中药名'] for h in herbs_top)}。"
+        ) if stats and ranked else f"当前查询疾病：「{selected_disease}」"
+        response = ask_gemini_diet_assistant(st.session_state.diet_messages, disease_ctx)
+    st.session_state.diet_messages.append({"role": "assistant", "content": response})
+    st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ==================== 页脚 ====================
 st.markdown("---")
