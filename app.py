@@ -278,7 +278,15 @@ def _diet_fallback(disease_context=""):
 
 def ask_gemini_diet_assistant(messages, disease_context=""):
     """向 Gemini 2.5 Flash API 发送请求，含指数退避重试（最多 5 次）。"""
-    api_key = "sk-9fb949b3a2e1476eb832f8ca446e24c5"
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        try:
+            api_key = st.secrets["DEEPSEEK_API_KEY"]
+        except Exception:
+            api_key = ""
+
+    if not api_key:
+        return _diet_fallback(disease_context)
 
     system_instruction = DIET_SYSTEM_INSTRUCTION
     if disease_context:

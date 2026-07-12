@@ -6,3 +6,4 @@ __pycache__/
 .claude/
 output/
 *.pyc
+.streamlit/secrets.toml
