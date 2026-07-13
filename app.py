@@ -10,7 +10,7 @@ if _project_root not in sys.path: sys.path.insert(0, _project_root)
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-import json, time, urllib.request, urllib.error
+import json, time, urllib.request, urllib.error, base64
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -99,9 +99,18 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] { font-weight: 800;
 .herb-card .herb-score { font-size: 1.1rem; font-weight: 700; color: #E67E22; min-width: 50px; text-align: right; }
 
 /* === 进度条 === */
-.progress-bar { height: 6px; border-radius: 3px; background: #E0E0E0; margin-top: 0.4rem; overflow: hidden; }
-.progress-bar .fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #2E7D32, #43A047);
+.progress-bar { height: 4px; border-radius: 2px; background: #E0E0E0; margin-top: 0.35rem; overflow: hidden; }
+.progress-bar .fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #2E7D32, #43A047);
   transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+
+/* === 中药图片 === */
+.herb-img-wrap { flex-shrink: 0; width: 72px; height: 72px; border-radius: 12px;
+  overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin: 0 4px; }
+.herb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.herb-img-placeholder { width: 72px; height: 72px; border-radius: 12px;
+  background: linear-gradient(135deg, #E8F5E9, #F1F8E9);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; border: 1px dashed #C8E6C9; }
 
 /* === 靶点 chips === */
 .evidence-chip { display: inline-block; background: #E8F5E9; color: #2E7D32;
@@ -260,6 +269,66 @@ DIET_SYSTEM_INSTRUCTION = (
     '4. 所有回答必须附带温馨提示：「本建议仅为日常膳食营养科普，不作为临床医疗诊断依据，如有身体不适请及时就医。」'
     '5. 优先结合中医「药食同源」理念，推荐山药、枸杞、红枣、薏米、桂圆、莲子、百合、茯苓等常见食材。'
 )
+
+
+# 中药图片文件夹
+_HERB_IMG_DIR = os.path.join(_project_root, "（高清版）106种药食同源带介绍")
+_HERB_IMG_FILES = None  # 延迟加载
+
+
+def _load_img_files():
+    """加载图片文件列表。"""
+    global _HERB_IMG_FILES
+    if _HERB_IMG_FILES is not None:
+        return
+    _HERB_IMG_FILES = [
+        os.path.splitext(f)[0]
+        for f in os.listdir(_HERB_IMG_DIR)
+        if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
+    ]
+
+
+def get_herb_image(herb_name):
+    """查找中药对应图片，返回 base64 HTML 标签或占位符。"""
+    _load_img_files()
+
+    matched = None
+    for fname in _HERB_IMG_FILES:
+        if fname == herb_name:
+            matched = fname
+            break
+    if not matched:
+        for fname in _HERB_IMG_FILES:
+            if fname.startswith(herb_name + "（"):
+                matched = fname
+                break
+    if not matched:
+        for fname in _HERB_IMG_FILES:
+            if herb_name.startswith(fname):
+                matched = fname
+                break
+
+    if not matched:
+        return '<div class="herb-img-placeholder">🌿</div>'
+
+    # 找到实际文件（处理扩展名）
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        img_path = os.path.join(_HERB_IMG_DIR, matched + ext)
+        if os.path.exists(img_path):
+            try:
+                with open(img_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode("utf-8")
+                ext_mime = ext.replace(".", "")
+                if ext_mime == "jpg":
+                    ext_mime = "jpeg"
+                return (
+                    f'<img src="data:image/{ext_mime};base64,{b64}" '
+                    f'class="herb-img" alt="{herb_name}" loading="lazy">'
+                )
+            except Exception:
+                pass
+
+    return '<div class="herb-img-placeholder">🌿</div>'
 
 
 def generate_herb_circular_graph(herb_name, disease_name, chain_data):
@@ -534,9 +603,12 @@ with left_col:
         pct = round(herb["关联靶点数"] / max_targets * 100) if max_targets else 0
         evi_chips = "".join(f'<span class="evidence-chip">{t}</span>' for t, c in herb["证据链"][:4])
 
+        herb_img = get_herb_image(herb["中药名"])
+
         st.markdown(
             f'<div class="herb-card" style="border-left-color:{border_c};background:{rank_bg};">'
             f'<div style="font-size:1.8rem;min-width:44px;text-align:center;">{medal_c}</div>'
+            f'<div class="herb-img-wrap">{herb_img}</div>'
             f'<div class="info">'
             f'<div class="herb-name">{herb["中药名"]}</div>'
             f'<div class="herb-stats">'
