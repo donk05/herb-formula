@@ -2,6 +2,8 @@ launch.py
 run.bat
 *.png
 *.jpg
+!（高清版）106种药食同源带介绍/*.jpg
+!（高清版）106种药食同源带介绍/*.png
 __pycache__/
 .claude/
 output/
