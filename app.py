@@ -11,9 +11,6 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 import json, time, urllib.request, urllib.error
-from pyecharts.charts import Graph
-from pyecharts import options as opts
-from streamlit_echarts import st_pyecharts
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -267,6 +264,9 @@ DIET_SYSTEM_INSTRUCTION = (
 
 def generate_herb_circular_graph(herb_name, disease_name, chain_data):
     """使用 pyecharts 生成环形知识图谱：疾病←靶点←化合物←中药。"""
+    from pyecharts.charts import Graph
+    from pyecharts import options as opts
+
     compounds = chain_data.get("compounds", [])
     targets = chain_data.get("targets", [])
     comp_target_map = chain_data.get("compound_target_map", {})
@@ -560,6 +560,7 @@ with left_col:
                 chart = generate_herb_circular_graph(
                     herb["中药名"], selected_disease, chain,
                 )
+                from streamlit_echarts import st_pyecharts
                 st_pyecharts(chart, height="540px")
             else:
                 st.caption("该中药暂无分子层面关联数据")
