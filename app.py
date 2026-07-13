@@ -281,6 +281,9 @@ def _load_img_files():
     global _HERB_IMG_FILES
     if _HERB_IMG_FILES is not None:
         return
+    if not os.path.isdir(_HERB_IMG_DIR):
+        _HERB_IMG_FILES = []
+        return
     _HERB_IMG_FILES = [
         os.path.splitext(f)[0]
         for f in os.listdir(_HERB_IMG_DIR)
