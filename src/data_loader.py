@@ -780,6 +780,81 @@ class GraphDataLoader:
             "相关中药数": len(herb_names),
         }
 
+    def get_herb_disease_chain(
+        self, herb_name: str, disease_cn: str,
+        max_ingredients: int = 8, max_genes: int = 12,
+    ) -> Dict:
+        """
+        获取指定中药与疾病之间的分子关联链路。
+        返回可用于绘制环形知识图谱的化合物、靶点列表及映射关系。
+
+        Returns:
+            {
+                "compounds": [(cid, cname), ...],   # 化合物ID+中文名
+                "targets": [(tid, tname), ...],      # 靶点ID+简称
+                "compound_target_map": {cid: [(tid, tname), ...]},  # 化合物→靶点
+            }
+        """
+        # 解析疾病英文名
+        en_disease = self.cn_to_en.get(disease_cn)
+        if en_disease is None:
+            en_disease = CN_TO_EN_DISEASE.get(disease_cn)
+        if en_disease is None and disease_cn in self.disease_to_targets:
+            en_disease = disease_cn
+        if en_disease is None:
+            dl = disease_cn.lower()
+            for name in self.disease_to_targets:
+                if dl in name.lower():
+                    en_disease = name
+                    break
+        if en_disease is None:
+            return {"compounds": [], "targets": [], "compound_target_map": {}}
+
+        # 疾病关联的靶点
+        disease_targets = self.disease_to_targets.get(en_disease, set())
+        if not disease_targets:
+            return {"compounds": [], "targets": [], "compound_target_map": {}}
+
+        # 该中药含有的化合物
+        herb_compounds = self.herb_to_compounds.get(herb_name, set())
+        if not herb_compounds:
+            return {"compounds": [], "targets": [], "compound_target_map": {}}
+
+        # pandas 向量化筛选：化合物在 herb 中 且 靶点在 disease 中
+        mask = (
+            self.compound_target_df["化合物ID"].isin(herb_compounds)
+            & self.compound_target_df["靶点ID"].isin(disease_targets)
+        )
+        matched = self.compound_target_df[mask]
+
+        if matched.empty:
+            return {"compounds": [], "targets": [], "compound_target_map": {}}
+
+        # 按靶点出现频次对化合物排序，截断
+        compound_target_count = matched.groupby("化合物ID").size().sort_values(ascending=False)
+        top_compounds = compound_target_count.head(max_ingredients).index.tolist()
+
+        # 收集这些化合物关联的靶点，截断
+        matched_top = matched[matched["化合物ID"].isin(top_compounds)]
+        target_compound_count = matched_top.groupby("靶点ID").size().sort_values(ascending=False)
+        top_targets = target_compound_count.head(max_genes).index.tolist()
+
+        # 构建返回结果
+        compound_target_map = {}
+        for cid in top_compounds:
+            c_targets = matched_top[matched_top["化合物ID"] == cid]["靶点ID"].tolist()
+            c_targets = [t for t in c_targets if t in top_targets]
+            if c_targets:
+                compound_target_map[cid] = [
+                    (t, self.target_names.get(t, t)) for t in c_targets
+                ]
+
+        return {
+            "compounds": [(cid, self.compound_names.get(cid, cid)) for cid in top_compounds if cid in compound_target_map],
+            "targets": [(tid, self.target_names.get(tid, tid)) for tid in top_targets],
+            "compound_target_map": compound_target_map,
+        }
+
     def summary(self) -> str:
         lines = [
             "=" * 50,

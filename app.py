@@ -11,6 +11,9 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
 import json, time, urllib.request, urllib.error
+from pyecharts.charts import Graph
+from pyecharts import options as opts
+from streamlit_echarts import st_pyecharts
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -262,6 +265,92 @@ DIET_SYSTEM_INSTRUCTION = (
 )
 
 
+def generate_herb_circular_graph(herb_name, disease_name, chain_data):
+    """使用 pyecharts 生成环形知识图谱：疾病←靶点←化合物←中药。"""
+    compounds = chain_data.get("compounds", [])
+    targets = chain_data.get("targets", [])
+    comp_target_map = chain_data.get("compound_target_map", {})
+
+    nodes = []
+    links = []
+
+    # --- 中心节点 ---
+    nodes.append({"name": disease_name, "symbolSize": 30,
+                  "itemStyle": {"color": "#FFB74D"}})   # 橙黄 — 疾病
+    nodes.append({"name": herb_name, "symbolSize": 25,
+                  "itemStyle": {"color": "#42A5F5"}})   # 蓝色 — 中药
+
+    # --- 化合物节点（绿色）---
+    for cid, cname in compounds:
+        label = cname if cname and cname != cid else cid
+        # 截断过长名称
+        if len(label) > 18:
+            label = label[:16] + "..."
+        nodes.append({"name": cid, "symbolSize": 15,
+                      "itemStyle": {"color": "#66BB6A"},
+                      "label": {"formatter": label}})
+        # 中药 → 化合物
+        links.append({"source": herb_name, "target": cid})
+
+    # --- 靶点节点（红色）---
+    for tid, tname in targets:
+        label = tname if tname and tname != tid else tid
+        if len(label) > 14:
+            label = label[:12] + "..."
+        nodes.append({"name": tid, "symbolSize": 12,
+                      "itemStyle": {"color": "#EF5350"},
+                      "label": {"formatter": label}})
+        # 靶点 → 疾病
+        links.append({"source": tid, "target": disease_name})
+
+    # --- 化合物 → 靶点 连线 ---
+    for cid, tlist in comp_target_map.items():
+        for tid, _ in tlist:
+            links.append({"source": cid, "target": tid})
+
+    graph = (
+        Graph(init_opts=opts.InitOpts(
+            width="100%", height="520px",
+            bg_color="rgba(0,0,0,0)",  # 透明背景
+        ))
+        .add(
+            series_name="",
+            nodes=nodes,
+            links=links,
+            categories=[
+                {"name": disease_name},
+                {"name": herb_name},
+            ],
+            layout="circular",
+            is_rotate_label=True,
+            is_draggable=True,
+            edge_symbol=["none", "arrow"],
+            edge_length=[50, 180],
+            linestyle_opts=opts.LineStyleOpts(
+                curve=0.3, width=1.2, opacity=0.65,
+            ),
+            label_opts=opts.LabelOpts(
+                position="right", font_size=11,
+                font_family="Microsoft YaHei, sans-serif",
+            ),
+            repulsion=600,
+            gravity=0.15,
+        )
+        .set_global_opts(
+            title_opts=opts.TitleOpts(
+                title=f"🔬 {herb_name} ↔ {disease_name} 分子机制图谱",
+                title_textstyle_opts=opts.TextStyleOpts(
+                    font_size=15, font_family="Microsoft YaHei, sans-serif",
+                    color="#1B5E20",
+                ),
+                pos_left="center",
+            ),
+            legend_opts=opts.LegendOpts(is_show=False),
+        )
+    )
+    return graph
+
+
 def _diet_fallback(disease_context=""):
     """当 Gemini API 不可用时的通用提示。"""
     disease_hint = f"当前查询疾病：「{disease_context}」。" if disease_context else ""
@@ -460,6 +549,20 @@ with left_col:
             f'<div class="herb-score">{pct}%</div>'
             f'</div>', unsafe_allow_html=True,
         )
+
+        # 环形知识图谱 Expander
+        with st.expander(f"🧬 查看【{herb['中药名']}】专属机制图谱"):
+            chain = loader.get_herb_disease_chain(
+                herb["中药名"], selected_disease,
+                max_ingredients=8, max_genes=12,
+            )
+            if chain["compounds"] and chain["targets"]:
+                chart = generate_herb_circular_graph(
+                    herb["中药名"], selected_disease, chain,
+                )
+                st_pyecharts(chart, height="540px")
+            else:
+                st.caption("该中药暂无分子层面关联数据")
 
 with right_col:
     # 饼图：Top 8 中药占比
