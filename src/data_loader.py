@@ -681,7 +681,7 @@ class GraphDataLoader:
 
         返回按关联强度降序排列的中药列表，每项包含：
           - 中药名, 关联靶点数, 关联化合物数
-          - 证据链：[(靶点名, 化合物名), ...]（前5条）
+          - 证据链：[(靶点名, 化合物名), ...]（按关联化合物数降序，取前5个靶点）
         """
         # 解析疾病名
         en_name = self.cn_to_en.get(cn_disease)
@@ -715,8 +715,8 @@ class GraphDataLoader:
         if not all_compound_ids:
             return []
 
-        # 3. 化合物 → 中药（反向：计算每个中药命中了多少靶点/化合物）
-        herb_stats: Dict[str, Dict] = {}  # herb → {targets, compounds, evidence}
+        # 3. 化合物 → 中药：统计每味中药下每个靶点关联的化合物数
+        herb_stats: Dict[str, Dict] = {}  # herb → {targets, compounds, target_compounds}
 
         for tid, comps in target_to_comps.items():
             tname = self.target_names.get(tid, tid)
@@ -726,21 +726,34 @@ class GraphDataLoader:
                 for herb in herbs:
                     if herb not in herb_stats:
                         herb_stats[herb] = {
-                            "targets": set(), "compounds": set(), "evidence": []
+                            "targets": set(),
+                            "compounds": set(),
+                            "target_compounds": {},  # tid -> set of cnames
                         }
                     herb_stats[herb]["targets"].add(tid)
                     herb_stats[herb]["compounds"].add(cid)
-                    if len(herb_stats[herb]["evidence"]) < 5:
-                        herb_stats[herb]["evidence"].append((tname, cname))
+                    if tid not in herb_stats[herb]["target_compounds"]:
+                        herb_stats[herb]["target_compounds"][tid] = set()
+                    herb_stats[herb]["target_compounds"][tid].add(cname)
 
-        # 4. 排序：关联靶点数（降序）→ 关联化合物数（降序）
+        # 4. 构建证据链 + 排序
         ranked = []
         for herb, stats in herb_stats.items():
+            # 按每个靶点关联的化合物数量降序，取前5个最强靶点
+            tc = stats["target_compounds"]
+            sorted_targets = sorted(tc.items(), key=lambda x: len(x[1]), reverse=True)
+            evidence = []
+            for tid, cnames in sorted_targets:
+                tname = self.target_names.get(tid, tid)
+                evidence.append((tname, next(iter(cnames))))
+                if len(evidence) >= 5:
+                    break
+
             ranked.append({
                 "中药名": herb,
                 "关联靶点数": len(stats["targets"]),
                 "关联化合物数": len(stats["compounds"]),
-                "证据链": stats["evidence"],
+                "证据链": evidence,
             })
 
         ranked.sort(key=lambda x: (x["关联靶点数"], x["关联化合物数"]), reverse=True)

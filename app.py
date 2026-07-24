@@ -145,6 +145,9 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
 
 /* === 膳食助手聊天容器 === */
 .chat-container {
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
   background: linear-gradient(160deg, rgba(255,255,255,0.72) 0%, rgba(245,242,235,0.58) 100%);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -155,23 +158,55 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
   box-shadow: 0 0 32px rgba(129,199,132,0.10), 0 6px 24px rgba(0,0,0,0.04),
               inset 0 1px 0 rgba(255,255,255,0.6);
   animation: dietChatGlow 4s ease-in-out infinite;
-  position: relative;
-  overflow: hidden;
-  z-index: 0;
-}
-.chat-container::before {
-  content: "";
-  position: absolute;
-  top: -70px; right: -50px;
-  width: 160px; height: 160px;
-  background: radial-gradient(circle, rgba(139,195,74,0.07) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: -1;
 }
 @keyframes dietChatGlow {
   0%, 100% { box-shadow: 0 0 32px rgba(129,199,132,0.08), 0 6px 24px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.6); border-color: rgba(129,199,132,0.28); }
   50% { box-shadow: 0 0 56px rgba(129,199,132,0.20), 0 6px 28px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7); border-color: rgba(129,199,132,0.50); }
+}
+
+/* === 绿色荧光标题框（标题 + 搜索框） === */
+.diet-header-box {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 1.4rem 1.4rem 1rem;
+  margin: 1rem 0;
+  background: radial-gradient(ellipse at 70% 30%, rgba(139,195,74,0.18) 0%, rgba(200,230,180,0.08) 40%, rgba(255,255,255,0.5) 100%);
+  border: 1.5px solid rgba(129,199,132,0.35);
+  box-shadow: 0 0 32px rgba(129,199,132,0.08), 0 4px 16px rgba(0,0,0,0.03);
+}
+.diet-header-box::before {
+  content: "";
+  position: absolute;
+  top: -40px; right: -30px;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(139,195,74,0.10) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+.diet-header-box h3 {
+  margin-top: 0;
+}
+
+/* === 顶部搜索框：绿色荧光椭圆背景 === */
+.chat-search-wrap {
+  position: relative;
+  margin-bottom: 1.2rem;
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+  background: radial-gradient(ellipse at 70% 30%, rgba(139,195,74,0.18) 0%, rgba(200,230,180,0.08) 40%, rgba(255,255,255,0.35) 100%);
+  border: 1.5px solid rgba(129,199,132,0.30);
+}
+.chat-search-wrap::before {
+  content: "";
+  position: absolute;
+  top: -30px; right: -20px;
+  width: 140px; height: 140px;
+  background: radial-gradient(circle, rgba(139,195,74,0.12) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
 }
 
 /* === 聊天消息气泡 === */
@@ -216,27 +251,34 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
 
 /* === 内联输入区域 === */
 [data-testid="stForm"] {
-  margin-top: 0.8rem;
+  margin-top: 0;
   border: none !important;
   padding: 0 !important;
 }
-.chat-container textarea {
+.search-box [data-testid="stTextInput"] input,
+.search-box input {
   border-radius: 14px !important;
-  border: 1.5px solid rgba(129,199,132,0.35) !important;
-  background: rgba(255,255,255,0.65) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  font-size: 0.92rem !important;
-  resize: none !important;
+  border: 3px solid #2E7D32 !important;
+  outline: 2px solid rgba(46,125,50,0.6) !important;
+  outline-offset: 2px !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 0 24px rgba(46,125,50,0.28), 0 4px 16px rgba(0,0,0,0.10) !important;
+  transition: all 0.3s ease !important;
+  font-size: 1rem !important;
+  padding: 0.7rem 1.2rem !important;
 }
-.chat-container textarea:hover {
-  border-color: rgba(67,160,71,0.50) !important;
-  box-shadow: 0 3px 16px rgba(46,125,50,0.08);
+.search-box [data-testid="stTextInput"] input:hover,
+.search-box input:hover {
+  border-color: #1B5E20 !important;
+  outline-color: rgba(27,94,32,0.8) !important;
+  box-shadow: 0 0 32px rgba(46,125,50,0.38), 0 6px 20px rgba(0,0,0,0.14) !important;
+  transform: translateY(-1px);
 }
-.chat-container textarea:focus {
-  border-color: #43A047 !important;
-  box-shadow: 0 0 0 4px rgba(67,160,71,0.10) !important;
+.search-box [data-testid="stTextInput"] input:focus,
+.search-box input:focus {
+  border-color: #1B5E20 !important;
+  outline-color: rgba(27,94,32,0.9) !important;
+  box-shadow: 0 0 40px rgba(46,125,50,0.48), 0 0 0 8px rgba(46,125,50,0.18) !important;
 }
 .chat-container button[kind="primary"] {
   min-height: 44px;
@@ -717,37 +759,28 @@ else:
     st.info("该疾病暂无健康建议数据。Groq AI 密钥未配置或调用失败。")
 
 # ==================== 药食同源 · AI 健康膳食助手 ====================
+st.markdown("---")
+
 # 初始化聊天历史
 if "diet_messages" not in st.session_state:
     st.session_state.diet_messages = []
 
-# 对话容器
-st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+st.markdown("### 🍽️ 亚健康调理建议")
+st.caption("基于知识图谱 + AI 大模型，为您提供个性化的药食同源膳食方案")
 
-# 渲染历史消息
-for msg in st.session_state.diet_messages:
-    role_class = "chat-msg-user" if msg["role"] == "user" else "chat-msg-ai"
-    avatar = "🧑" if msg["role"] == "user" else "🌿"
-    st.markdown(
-        f'<div class="{role_class}"><span class="chat-avatar">{avatar}</span>'
-        f'<div class="chat-bubble">{msg["content"]}</div></div>',
-        unsafe_allow_html=True,
-    )
-
-# 内联输入区域（不悬浮）
+st.markdown('<div class="search-box">', unsafe_allow_html=True)
 with st.form("diet_chat_form", clear_on_submit=True, border=False):
-    cols = st.columns([9, 1], gap="small")
+    cols = st.columns([10, 2], gap="small")
     with cols[0]:
-        user_input = st.text_area(
+        user_input = st.text_input(
             "输入",
             placeholder="💬 询问关于该亚健康状态的日常膳食调理建议...",
             label_visibility="collapsed",
-            height=68,
             key="diet_chat_input",
         )
     with cols[1]:
-        st.markdown("<br>", unsafe_allow_html=True)
-        submitted = st.form_submit_button("📨", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("🔍 搜索", use_container_width=True, type="primary")
+st.markdown('</div>', unsafe_allow_html=True)
 
 if submitted and user_input.strip():
     prompt = user_input.strip()
@@ -762,8 +795,6 @@ if submitted and user_input.strip():
         response = ask_gemini_diet_assistant(st.session_state.diet_messages, disease_ctx)
     st.session_state.diet_messages.append({"role": "assistant", "content": response})
     st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 # ==================== 页脚 ====================
 st.markdown("---")
