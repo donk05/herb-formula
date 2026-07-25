@@ -10,7 +10,7 @@ if _project_root not in sys.path: sys.path.insert(0, _project_root)
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-import json, time, urllib.request, urllib.error, base64
+import json, time, urllib.request, urllib.error, base64, sqlite3
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -301,6 +301,47 @@ def fuzzy_search(query, candidates, top_k=8):
     scored.sort(key=lambda x: x[1], reverse=True)
     return [c for c, s in scored[:top_k] if s > 0]
 
+# ==================== 文献知识检索 ====================
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_paper_from_db(herb: str, disease: str):
+    """从 SQLite 查询与指定中药-疾病相关的文献，最多返回 3 篇"""
+    db_path = os.path.join(_project_root, "data", "literature.db")
+    if not os.path.exists(db_path):
+        return []
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT title, abstract, keywords, url FROM papers WHERE herb=? "
+            "AND (disease=? OR ? LIKE '%' || disease || '%') LIMIT 3",
+            (herb, disease, disease),
+        )
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def has_literature(herb: str, disease: str) -> bool:
+    """轻量级预检：该中药-疾病组合在文献库中是否有记录"""
+    db_path = os.path.join(_project_root, "data", "literature.db")
+    if not os.path.exists(db_path):
+        return False
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute(
+            "SELECT 1 FROM papers WHERE herb=? "
+            "AND (disease=? OR ? LIKE '%' || disease || '%') LIMIT 1",
+            (herb, disease, disease),
+        )
+        result = cursor.fetchone() is not None
+        conn.close()
+        return result
+    except Exception:
+        return False
+
 # ==================== Gemini 膳食助手 API ====================
 DIET_SYSTEM_INSTRUCTION = (
     '你是一位专注于「药食同源」与「大众营养膳食」的温和科普助手。'
@@ -556,10 +597,15 @@ with st.sidebar:
         "🔍 搜索疾病", placeholder="输入中文或英文疾病名...",
         label_visibility="collapsed",
     )
-    matched = fuzzy_search(search_query.strip(), all_diseases, top_k=15) if search_query.strip() else all_diseases_default
+    if search_query.strip():
+        matched = fuzzy_search(search_query.strip(), all_diseases, top_k=15)
+        default_idx = 0
+    else:
+        matched = all_diseases_default
+        default_idx = matched.index("高血压") if "高血压" in matched else 0
 
     if matched:
-        selected_disease = st.selectbox("匹配结果（{}条）".format(len(matched)), options=matched, index=0, label_visibility="collapsed")
+        selected_disease = st.selectbox("匹配结果（{}条）".format(len(matched)), options=matched, index=default_idx, label_visibility="collapsed")
     else:
         selected_disease = None
         st.markdown('<div class="search-hint">🔎 未找到匹配，试试其他关键词</div>', unsafe_allow_html=True)
@@ -681,6 +727,46 @@ with left_col:
                 st_pyecharts(chart, height="540px")
             else:
                 st.caption("该中药暂无分子层面关联数据")
+
+        # 文献知识 Expander
+        herb_name = herb["中药名"]
+        has_lit = has_literature(herb_name, selected_disease)
+        expander_title = (
+            f"📚 查看【{herb_name}】文献知识    🟢 已收录"
+            if has_lit else
+            f"📚 查看【{herb_name}】文献知识    🔴 暂无"
+        )
+        with st.expander(expander_title):
+            if has_lit:
+                papers = fetch_paper_from_db(herb_name, selected_disease)
+                for idx, paper in enumerate(papers):
+                    if idx > 0:
+                        st.divider()
+                    title = paper.get("title") or "无标题"
+                    st.markdown(f"**{title}**")
+                    kw = paper.get("keywords")
+                    if kw:
+                        tags = " | ".join(
+                            f"🏷️ {t.strip()}" for t in kw.split(",") if t.strip()
+                        )
+                        st.markdown(tags)
+                    abstract = paper.get("abstract")
+                    if abstract:
+                        escaped = abstract.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        st.markdown(
+                            f'<div style="font-size:0.88rem;color:#666;line-height:1.7;'
+                            f'white-space:pre-wrap;border-left:3px solid #C8E6C9;'
+                            f'padding-left:12px;margin:8px 0;">{escaped}</div>',
+                            unsafe_allow_html=True,
+                        )
+                    url = paper.get("url")
+                    if url:
+                        st.link_button("🌐 查看原文", url)
+            else:
+                st.info(
+                    "💡 提示：该特定药-病组合在当前核心文献库中暂无直接收录。"
+                    "系统基于其已知活性成分与靶点网络进行协同推理推荐。"
+                )
 
 with right_col:
     # 饼图：Top 8 中药占比
