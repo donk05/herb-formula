@@ -10,7 +10,7 @@ if _project_root not in sys.path: sys.path.insert(0, _project_root)
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-import json, time, urllib.request, urllib.error, base64, sqlite3
+import json, time, urllib.request, urllib.error, base64, sqlite3, zipfile, shutil
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -336,12 +336,76 @@ def has_literature(herb: str, disease: str) -> bool:
         return False
 
 # ==================== 古籍 RAG 知识库 ====================
+_CHROMA_DOWNLOAD_URL = (
+    "https://github.com/donk05/herb-formula/releases/download/v1.0/chroma_db.zip"
+)
+
+
+def _chroma_dir_ready(db_dir: str) -> bool:
+    """检查 chroma_db 目录是否存在且包含实际数据文件"""
+    if not os.path.isdir(db_dir):
+        return False
+    try:
+        entries = os.listdir(db_dir)
+    except OSError:
+        return False
+    # ChromaDB 0.4+ 内部至少有一个子目录（如 chroma.sqlite3 或 UUID 目录）
+    return any(
+        os.path.isfile(os.path.join(db_dir, e))
+        or os.path.isdir(os.path.join(db_dir, e))
+        for e in entries
+    )
+
+
 @st.cache_resource
 def load_rag_db():
-    """加载古籍 ChromaDB 向量库（仅启动时加载一次，常驻内存）"""
-    db_path = os.path.join(_project_root, "data", "chroma_db")
-    if not os.path.isdir(db_path):
-        return None
+    """加载古籍 ChromaDB 向量库（首次自动从 GitHub Releases 下载 171MB）"""
+    db_dir = os.path.join(_project_root, "data", "chroma_db")
+    zip_path = os.path.join(_project_root, "data", "chroma_db.zip")
+    data_dir = os.path.join(_project_root, "data")
+
+    # 本地已有数据 → 直接加载
+    if _chroma_dir_ready(db_dir):
+        return _init_chroma(db_dir)
+
+    # 需要下载
+    with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
+        try:
+            # 下载
+            _download_chroma_db(zip_path)
+            # 解压
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(data_dir)
+            # 删除临时压缩包
+            os.remove(zip_path)
+        except Exception as e:
+            st.error(f"古籍库同步失败，已降级为纯 AI 问答模式。错误: {e}")
+            if os.path.exists(zip_path):
+                try:
+                    os.remove(zip_path)
+                except OSError:
+                    pass
+            return None
+
+    return _init_chroma(db_dir)
+
+
+def _download_chroma_db(zip_path: str):
+    """分块下载 chroma_db.zip，避免内存溢出"""
+    with urllib.request.urlopen(_CHROMA_DOWNLOAD_URL) as resp:
+        total = int(resp.headers.get("Content-Length", 0))
+        downloaded = 0
+        with open(zip_path, "wb") as f:
+            while True:
+                chunk = resp.read(1024 * 1024)  # 1 MB chunks
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+
+
+def _init_chroma(db_dir: str):
+    """初始化 ChromaDB + HuggingFaceEmbeddings"""
     try:
         from langchain_huggingface import HuggingFaceEmbeddings
         from langchain_chroma import Chroma
@@ -352,7 +416,7 @@ def load_rag_db():
             encode_kwargs={"normalize_embeddings": True},
         )
         return Chroma(
-            persist_directory=db_path,
+            persist_directory=db_dir,
             embedding_function=embeddings,
             collection_name="ancient_books",
         )
