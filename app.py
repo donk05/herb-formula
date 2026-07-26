@@ -339,73 +339,61 @@ def has_literature(herb: str, disease: str) -> bool:
 _CHROMA_DOWNLOAD_URL = (
     "https://github.com/donk05/herb-formula/releases/download/v1.0/chroma_db.zip"
 )
+_DB_DIR = os.path.join(_project_root, "data", "chroma_db")
+_ZIP_PATH = os.path.join(_project_root, "data", "chroma_db.zip")
+_DATA_DIR = os.path.join(_project_root, "data")
 
 
-def _chroma_dir_ready(db_dir: str) -> bool:
+def _chroma_dir_ready() -> bool:
     """检查 chroma_db 目录是否存在且包含实际数据文件"""
-    if not os.path.isdir(db_dir):
+    if not os.path.isdir(_DB_DIR):
         return False
     try:
-        entries = os.listdir(db_dir)
+        entries = os.listdir(_DB_DIR)
     except OSError:
         return False
-    # ChromaDB 0.4+ 内部至少有一个子目录（如 chroma.sqlite3 或 UUID 目录）
-    return any(
-        os.path.isfile(os.path.join(db_dir, e))
-        or os.path.isdir(os.path.join(db_dir, e))
-        for e in entries
-    )
+    return bool(entries)
+
+
+def _download_chroma_db():
+    """分块下载 chroma_db.zip，避免内存溢出"""
+    with urllib.request.urlopen(_CHROMA_DOWNLOAD_URL) as resp:
+        with open(_ZIP_PATH, "wb") as f:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+
+def _ensure_rag_downloaded():
+    """确保 chroma_db 存在；首次自动从 GitHub Releases 下载（不缓存，失败了可重试）"""
+    if _chroma_dir_ready():
+        return
+    with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
+        try:
+            _download_chroma_db()
+            with zipfile.ZipFile(_ZIP_PATH, "r") as zf:
+                zf.extractall(_DATA_DIR)
+            os.remove(_ZIP_PATH)
+        except Exception as e:
+            st.error(f"古籍库同步失败，已降级为纯 AI 问答模式。错误: {e}")
+            if os.path.exists(_ZIP_PATH):
+                try:
+                    os.remove(_ZIP_PATH)
+                except OSError:
+                    pass
+
+
+# 启动时立即执行下载（不被 @st.cache_resource 缓存，失败后重启会重试）
+_ensure_rag_downloaded()
 
 
 @st.cache_resource
 def load_rag_db():
-    """加载古籍 ChromaDB 向量库（首次自动从 GitHub Releases 下载 171MB）"""
-    db_dir = os.path.join(_project_root, "data", "chroma_db")
-    zip_path = os.path.join(_project_root, "data", "chroma_db.zip")
-    data_dir = os.path.join(_project_root, "data")
-
-    # 本地已有数据 → 直接加载
-    if _chroma_dir_ready(db_dir):
-        return _init_chroma(db_dir)
-
-    # 需要下载
-    with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
-        try:
-            # 下载
-            _download_chroma_db(zip_path)
-            # 解压
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(data_dir)
-            # 删除临时压缩包
-            os.remove(zip_path)
-        except Exception as e:
-            st.error(f"古籍库同步失败，已降级为纯 AI 问答模式。错误: {e}")
-            if os.path.exists(zip_path):
-                try:
-                    os.remove(zip_path)
-                except OSError:
-                    pass
-            return None
-
-    return _init_chroma(db_dir)
-
-
-def _download_chroma_db(zip_path: str):
-    """分块下载 chroma_db.zip，避免内存溢出"""
-    with urllib.request.urlopen(_CHROMA_DOWNLOAD_URL) as resp:
-        total = int(resp.headers.get("Content-Length", 0))
-        downloaded = 0
-        with open(zip_path, "wb") as f:
-            while True:
-                chunk = resp.read(1024 * 1024)  # 1 MB chunks
-                if not chunk:
-                    break
-                f.write(chunk)
-                downloaded += len(chunk)
-
-
-def _init_chroma(db_dir: str):
-    """初始化 ChromaDB + HuggingFaceEmbeddings"""
+    """加载古籍 ChromaDB 向量库（常驻内存）"""
+    if not _chroma_dir_ready():
+        return None
     try:
         from langchain_huggingface import HuggingFaceEmbeddings
         from langchain_chroma import Chroma
@@ -416,7 +404,7 @@ def _init_chroma(db_dir: str):
             encode_kwargs={"normalize_embeddings": True},
         )
         return Chroma(
-            persist_directory=db_dir,
+            persist_directory=_DB_DIR,
             embedding_function=embeddings,
             collection_name="ancient_books",
         )
@@ -434,9 +422,6 @@ def retrieve_ancient_books(query: str, k: int = 3):
         {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
         for doc in docs
     ]
-
-# 启动时预加载古籍 RAG 向量库（云端首次自动下载）
-_rag_db = load_rag_db()
 
 # ==================== Gemini 膳食助手 API ====================
 DIET_SYSTEM_INSTRUCTION = (
