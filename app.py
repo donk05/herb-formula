@@ -285,6 +285,10 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
 def get_loader(): return GraphDataLoader()
 
 loader = get_loader()
+
+# 启动时预加载古籍 RAG 向量库（云端首次自动下载）
+_rag_db = load_rag_db()
+
 all_diseases = loader.all_diseases_cn
 all_diseases_default = loader.all_diseases_cn_quality
 
