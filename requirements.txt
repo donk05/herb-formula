@@ -6,3 +6,10 @@ openpyxl>=3.0
 openai>=1.0
 pyecharts>=2.0
 streamlit-echarts>=0.4
+requests
+langchain
+langchain-community
+langchain-chroma
+langchain-huggingface
+chromadb
+sentence-transformers

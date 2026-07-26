@@ -356,13 +356,13 @@ def _chroma_dir_ready() -> bool:
 
 
 def _download_chroma_db():
-    """分块下载 chroma_db.zip，避免内存溢出"""
-    with urllib.request.urlopen(_CHROMA_DOWNLOAD_URL) as resp:
-        with open(_ZIP_PATH, "wb") as f:
-            while True:
-                chunk = resp.read(1024 * 1024)
-                if not chunk:
-                    break
+    """分块下载 chroma_db.zip，使用 requests 处理 GitHub 重定向"""
+    import requests
+    resp = requests.get(_CHROMA_DOWNLOAD_URL, stream=True, timeout=30)
+    resp.raise_for_status()
+    with open(_ZIP_PATH, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            if chunk:
                 f.write(chunk)
 
 
@@ -370,42 +370,50 @@ def _ensure_rag_downloaded():
     """确保 chroma_db 存在；首次自动从 GitHub Releases 下载（不缓存，失败了可重试）"""
     if _chroma_dir_ready():
         return
-    with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
-        try:
+    try:
+        with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
             _download_chroma_db()
+        with st.spinner("正在解压古籍数据库..."):
             with zipfile.ZipFile(_ZIP_PATH, "r") as zf:
                 zf.extractall(_DATA_DIR)
             os.remove(_ZIP_PATH)
-        except Exception as e:
-            st.error(f"古籍库同步失败，已降级为纯 AI 问答模式。错误: {e}")
-            if os.path.exists(_ZIP_PATH):
-                try:
-                    os.remove(_ZIP_PATH)
-                except OSError:
-                    pass
-
-
-# 启动时立即执行下载（不被 @st.cache_resource 缓存，失败后重启会重试）
-_ensure_rag_downloaded()
+    except Exception as e:
+        # 写入状态文件方便排查
+        status_path = os.path.join(_DATA_DIR, "_rag_status.txt")
+        with open(status_path, "w") as sf:
+            sf.write(f"DOWNLOAD_FAILED: {e}")
+        st.warning(
+            f"古籍库同步失败（已降级为纯 AI 问答模式）。"
+            f"可能需要重启应用重试。错误: {e}"
+        )
+        if os.path.exists(_ZIP_PATH):
+            try:
+                os.remove(_ZIP_PATH)
+            except OSError:
+                pass
 
 
 @st.cache_resource
+def _get_rag_embeddings():
+    """缓存向量模型，只加载一次"""
+    from langchain_huggingface import HuggingFaceEmbeddings
+    return HuggingFaceEmbeddings(
+        model_name="BAAI/bge-small-zh-v1.5",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
+
+
 def load_rag_db():
-    """加载古籍 ChromaDB 向量库（常驻内存）"""
+    """加载古籍 ChromaDB 向量库（下载未缓存，失败可重试）"""
+    _ensure_rag_downloaded()
     if not _chroma_dir_ready():
         return None
     try:
-        from langchain_huggingface import HuggingFaceEmbeddings
         from langchain_chroma import Chroma
-
-        embeddings = HuggingFaceEmbeddings(
-            model_name="BAAI/bge-small-zh-v1.5",
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
         return Chroma(
             persist_directory=_DB_DIR,
-            embedding_function=embeddings,
+            embedding_function=_get_rag_embeddings(),
             collection_name="ancient_books",
         )
     except Exception:
@@ -941,6 +949,20 @@ if "diet_messages" not in st.session_state:
 
 st.markdown("### 🍽️ 亚健康调理建议")
 st.caption("基于知识图谱 + AI 大模型，为您提供个性化的药食同源膳食方案")
+
+# RAG 状态指示器
+if load_rag_db() is not None:
+    st.markdown(
+        '<span style="font-size:0.82rem;color:#2E7D32;background:#E8F5E9;'
+        'padding:3px 10px;border-radius:12px;">📚 古籍知识库已就绪</span>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
+        'padding:3px 10px;border-radius:12px;">📚 古籍知识库未加载（纯 AI 模式）</span>',
+        unsafe_allow_html=True,
+    )
 
 st.markdown('<div class="search-box">', unsafe_allow_html=True)
 with st.form("diet_chat_form", clear_on_submit=True, border=False):
