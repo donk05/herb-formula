@@ -285,10 +285,6 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
 def get_loader(): return GraphDataLoader()
 
 loader = get_loader()
-
-# 启动时预加载古籍 RAG 向量库（云端首次自动下载）
-_rag_db = load_rag_db()
-
 all_diseases = loader.all_diseases_cn
 all_diseases_default = loader.all_diseases_cn_quality
 
@@ -438,6 +434,9 @@ def retrieve_ancient_books(query: str, k: int = 3):
         {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
         for doc in docs
     ]
+
+# 启动时预加载古籍 RAG 向量库（云端首次自动下载）
+_rag_db = load_rag_db()
 
 # ==================== Gemini 膳食助手 API ====================
 DIET_SYSTEM_INSTRUCTION = (
