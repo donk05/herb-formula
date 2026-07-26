@@ -209,45 +209,38 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
   z-index: -1;
 }
 
-/* === 聊天消息气泡 === */
-.chat-msg-user, .chat-msg-ai {
+/* === 微信风格用户消息气泡（右对齐，头像在右，绿色气泡） === */
+.wechat-user-row {
   display: flex;
+  justify-content: flex-end;
   align-items: flex-start;
+  margin-bottom: 1rem;
   gap: 10px;
-  margin-bottom: 0.9rem;
-  animation: msgFadeIn 0.35s ease-out;
 }
-@keyframes msgFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.chat-avatar {
-  font-size: 1.4rem;
+.wechat-user-bubble {
+  max-width: 75%;
+  background: #95ec69;
+  color: #111;
+  padding: 0.7rem 1rem;
+  border-radius: 16px 4px 16px 16px;
+  font-size: 0.93rem;
+  line-height: 1.7;
+  word-break: break-word;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.wechat-user-avatar {
+  font-size: 1.5rem;
   line-height: 1;
   flex-shrink: 0;
-  width: 36px; height: 36px;
-  display: flex; align-items: center; justify-content: center;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
-  background: rgba(255,255,255,0.7);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
-.chat-bubble {
-  max-width: 82%;
-  padding: 0.75rem 1rem;
-  border-radius: 16px;
-  font-size: 0.93rem;
-  line-height: 1.75;
-  word-break: break-word;
-}
-.chat-msg-user .chat-bubble {
-  background: linear-gradient(135deg, #E8F5E9, #F1F8E9);
-  border: 1px solid rgba(46,125,50,0.12);
-  border-bottom-right-radius: 4px;
-}
-.chat-msg-ai .chat-bubble {
-  background: linear-gradient(135deg, #FFFFFF, #FDFBF7);
-  border: 1px solid rgba(0,0,0,0.06);
-  border-bottom-left-radius: 4px;
-}
-.chat-msg-user { flex-direction: row-reverse; }
-.chat-msg-user .chat-bubble { text-align: right; }
 
 /* === 内联输入区域 === */
 [data-testid="stForm"] {
@@ -341,6 +334,42 @@ def has_literature(herb: str, disease: str) -> bool:
         return result
     except Exception:
         return False
+
+# ==================== 古籍 RAG 知识库 ====================
+@st.cache_resource
+def load_rag_db():
+    """加载古籍 ChromaDB 向量库（仅启动时加载一次，常驻内存）"""
+    db_path = os.path.join(_project_root, "data", "chroma_db")
+    if not os.path.isdir(db_path):
+        return None
+    try:
+        from langchain_huggingface import HuggingFaceEmbeddings
+        from langchain_chroma import Chroma
+
+        embeddings = HuggingFaceEmbeddings(
+            model_name="BAAI/bge-small-zh-v1.5",
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+        return Chroma(
+            persist_directory=db_path,
+            embedding_function=embeddings,
+            collection_name="ancient_books",
+        )
+    except Exception:
+        return None
+
+
+def retrieve_ancient_books(query: str, k: int = 3):
+    """检索古籍中与用户问题最相关的 k 个段落"""
+    db = load_rag_db()
+    if db is None:
+        return []
+    docs = db.similarity_search(query, k=k)
+    return [
+        {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
+        for doc in docs
+    ]
 
 # ==================== Gemini 膳食助手 API ====================
 DIET_SYSTEM_INSTRUCTION = (
@@ -520,8 +549,8 @@ def _diet_fallback(disease_context=""):
     )
 
 
-def ask_gemini_diet_assistant(messages, disease_context=""):
-    """向 Gemini 2.5 Flash API 发送请求，含指数退避重试（最多 5 次）。"""
+def ask_gemini_diet_assistant(messages, disease_context="", rag_context=""):
+    """向 DeepSeek API 发送请求，可选结合古籍 RAG 上下文。"""
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
         try:
@@ -533,6 +562,13 @@ def ask_gemini_diet_assistant(messages, disease_context=""):
         return _diet_fallback(disease_context)
 
     system_instruction = DIET_SYSTEM_INSTRUCTION
+    if rag_context:
+        system_instruction += (
+            "\n\n你是一位精通传统中医和现代健康的调理专家。请严格结合以下古籍原典，"
+            "用通俗易懂的白话文回答用户的亚健康调理问题。如果古籍中未提及，"
+            "请基于你自己的中医知识库进行补充，但要说明。\n\n"
+            "【检索到的古籍记载】：\n" + rag_context
+        )
     if disease_context:
         system_instruction += f"\n\n{disease_context}"
 
@@ -871,16 +907,59 @@ st.markdown('</div>', unsafe_allow_html=True)
 if submitted and user_input.strip():
     prompt = user_input.strip()
     st.session_state.diet_messages.append({"role": "user", "content": prompt})
-    with st.spinner("🌿 AI 正在为您生成膳食建议..."):
+    with st.spinner("🌿 AI 正在检索古籍并生成膳食建议..."):
+        # RAG 检索古籍
+        rag_docs = retrieve_ancient_books(prompt, k=3)
+        st.session_state.diet_rag_docs = rag_docs
+
+        # 构建古籍上下文
+        rag_context = ""
+        if rag_docs:
+            lines = []
+            for i, doc in enumerate(rag_docs, 1):
+                lines.append(f"【古籍 {i}】《{doc['book_name']}》记载：{doc['content']}")
+            rag_context = "\n\n".join(lines)
+
         herbs_top = ranked[:5] if ranked else []
         disease_ctx = (
             f"当前查询疾病：「{selected_disease}」\n"
             f"知识图谱：{stats['关联靶点数']} 个蛋白质靶点、{stats['关联化合物数']} 种化合物、{stats['相关中药数']} 种药食同源中药。\n"
             f"图谱 Top 5 推荐：{'、'.join(h['中药名'] for h in herbs_top)}。"
         ) if stats and ranked else f"当前查询疾病：「{selected_disease}」"
-        response = ask_gemini_diet_assistant(st.session_state.diet_messages, disease_ctx)
+        response = ask_gemini_diet_assistant(
+            st.session_state.diet_messages, disease_ctx, rag_context=rag_context,
+        )
     st.session_state.diet_messages.append({"role": "assistant", "content": response})
     st.rerun()
+
+# 显示完整对话记录
+if st.session_state.diet_messages:
+    st.markdown("---")
+    st.markdown("### 💬 对话记录")
+    for msg in st.session_state.diet_messages:
+        if msg["role"] == "user":
+            # 微信风格：右对齐，绿色气泡，头像在右侧
+            safe_content = msg["content"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            st.markdown(
+                f'<div class="wechat-user-row">'
+                f'<div class="wechat-user-bubble">{safe_content}</div>'
+                f'<div class="wechat-user-avatar">🧑</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            with st.chat_message("assistant", avatar="🌿"):
+                st.markdown(msg["content"])
+
+# 古籍原文依据面板
+if "diet_rag_docs" in st.session_state and st.session_state.diet_rag_docs:
+    rag_docs = st.session_state.diet_rag_docs
+    with st.expander("📜 查看 AI 引用的古籍原文依据", expanded=False):
+        for i, doc in enumerate(rag_docs, 1):
+            st.markdown(f"**📖 《{doc['book_name']}》**")
+            st.info(doc["content"])
+            if i < len(rag_docs):
+                st.divider()
 
 # ==================== 页脚 ====================
 st.markdown("---")
