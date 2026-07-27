@@ -342,23 +342,26 @@ _CHROMA_DOWNLOAD_URL = (
 _DB_DIR = os.path.join(_project_root, "data", "chroma_db")
 _ZIP_PATH = os.path.join(_project_root, "data", "chroma_db.zip")
 _DATA_DIR = os.path.join(_project_root, "data")
-_RAG_STATUS_KEY = "_rag_loaded"
+
+# 全局变量：记录下载过程中的错误（主页面直接显示，不会错过）
+_RAG_ERROR_MSG = None
 
 
 def _chroma_dir_ready() -> bool:
-    """检查 chroma_db 目录是否存在且包含实际数据文件"""
     if not os.path.isdir(_DB_DIR):
         return False
     try:
-        entries = os.listdir(_DB_DIR)
+        return bool(os.listdir(_DB_DIR))
     except OSError:
         return False
-    return bool(entries)
 
 
 def _download_chroma_db():
-    """分块下载 chroma_db.zip，添加 UA 头和超时确保 GitHub 连接"""
-    import requests
+    """分块下载，带 UA + 重定向 + 长超时"""
+    try:
+        import requests
+    except ImportError:
+        raise RuntimeError("缺少 requests 库，请确认 requirements.txt 已包含 requests")
     resp = requests.get(
         _CHROMA_DOWNLOAD_URL,
         stream=True,
@@ -374,7 +377,6 @@ def _download_chroma_db():
 
 
 def _fix_nested_chroma_dir():
-    """如果解压后出现 data/chroma_db/chroma_db/ 嵌套，自动提一级"""
     nested = os.path.join(_DB_DIR, "chroma_db")
     if not os.path.isdir(nested):
         return
@@ -394,19 +396,19 @@ def _fix_nested_chroma_dir():
 
 
 def _ensure_rag_downloaded():
-    """确保 chroma_db 存在；首次自动从 GitHub Releases 下载"""
+    """返回 True 表示下载成功或已存在，False 表示失败"""
+    global _RAG_ERROR_MSG
     if _chroma_dir_ready():
-        return
+        return True
     try:
         with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
             _download_chroma_db()
 
-        # 校验下载的 zip 文件大小（小于 5MB 说明下载到了错误网页）
         zip_size = os.path.getsize(_ZIP_PATH)
         if zip_size < 5 * 1024 * 1024:
             raise RuntimeError(
-                f"下载的压缩包仅 {zip_size / 1024:.0f} KB，"
-                f"可能为错误网页。请检查 GitHub Release 链接是否有效。"
+                f"下载的文件仅 {zip_size / 1024:.0f} KB，非有效压缩包。"
+                f"请确认 GitHub Release 链接正确且文件已上传。"
             )
 
         with st.spinner("正在解压古籍数据库..."):
@@ -414,21 +416,21 @@ def _ensure_rag_downloaded():
                 zf.extractall(_DATA_DIR)
             os.remove(_ZIP_PATH)
 
-        # 修复可能的解压嵌套目录
         _fix_nested_chroma_dir()
+        return True
 
     except Exception as e:
-        st.sidebar.error(f"❌ RAG 加载失败: {type(e).__name__} - {str(e)[:200]}")
+        _RAG_ERROR_MSG = f"❌ 古籍库同步失败: {type(e).__name__} - {str(e)[:300]}"
         if os.path.exists(_ZIP_PATH):
             try:
                 os.remove(_ZIP_PATH)
             except OSError:
                 pass
+        return False
 
 
 @st.cache_resource
 def _get_rag_embeddings():
-    """缓存向量模型，只加载一次（CPU 运行，节省内存）"""
     from langchain_huggingface import HuggingFaceEmbeddings
     return HuggingFaceEmbeddings(
         model_name="BAAI/bge-small-zh-v1.5",
@@ -438,29 +440,23 @@ def _get_rag_embeddings():
 
 
 def load_rag_db():
-    """加载古籍 ChromaDB 向量库（下载未缓存，失败可重试）"""
-    _ensure_rag_downloaded()
-    if not _chroma_dir_ready():
+    global _RAG_ERROR_MSG
+    ok = _ensure_rag_downloaded()
+    if not ok:
         return None
     try:
         from langchain_chroma import Chroma
-        db = Chroma(
+        return Chroma(
             persist_directory=_DB_DIR,
             embedding_function=_get_rag_embeddings(),
             collection_name="ancient_books",
         )
-        # 成功加载后，在侧边栏显示成功提示（仅首次）
-        if not st.session_state.get(_RAG_STATUS_KEY):
-            st.sidebar.success("📚 古籍知识库已就绪")
-            st.session_state[_RAG_STATUS_KEY] = True
-        return db
     except Exception as e:
-        st.sidebar.error(f"❌ ChromaDB 初始化失败: {type(e).__name__} - {str(e)[:200]}")
+        _RAG_ERROR_MSG = f"❌ ChromaDB 初始化失败: {type(e).__name__} - {str(e)[:300]}"
         return None
 
 
 def retrieve_ancient_books(query: str, k: int = 3):
-    """检索古籍中与用户问题最相关的 k 个段落"""
     db = load_rag_db()
     if db is None:
         return []
@@ -990,7 +986,8 @@ st.markdown("### 🍽️ 亚健康调理建议")
 st.caption("基于知识图谱 + AI 大模型，为您提供个性化的药食同源膳食方案")
 
 # RAG 状态指示器
-if load_rag_db() is not None:
+_rag_loaded = load_rag_db() is not None
+if _rag_loaded:
     st.markdown(
         '<span style="font-size:0.82rem;color:#2E7D32;background:#E8F5E9;'
         'padding:3px 10px;border-radius:12px;">📚 古籍知识库已就绪</span>',
@@ -1002,6 +999,8 @@ else:
         'padding:3px 10px;border-radius:12px;">📚 古籍知识库未加载（纯 AI 模式）</span>',
         unsafe_allow_html=True,
     )
+    if _RAG_ERROR_MSG:
+        st.error(_RAG_ERROR_MSG)
 
 st.markdown('<div class="search-box">', unsafe_allow_html=True)
 with st.form("diet_chat_form", clear_on_submit=True, border=False):
