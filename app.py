@@ -342,6 +342,7 @@ _CHROMA_DOWNLOAD_URL = (
 _DB_DIR = os.path.join(_project_root, "data", "chroma_db")
 _ZIP_PATH = os.path.join(_project_root, "data", "chroma_db.zip")
 _DATA_DIR = os.path.join(_project_root, "data")
+_RAG_STATUS_KEY = "_rag_loaded"
 
 
 def _chroma_dir_ready() -> bool:
@@ -356,9 +357,15 @@ def _chroma_dir_ready() -> bool:
 
 
 def _download_chroma_db():
-    """分块下载 chroma_db.zip，使用 requests 处理 GitHub 重定向"""
+    """分块下载 chroma_db.zip，添加 UA 头和超时确保 GitHub 连接"""
     import requests
-    resp = requests.get(_CHROMA_DOWNLOAD_URL, stream=True, timeout=30)
+    resp = requests.get(
+        _CHROMA_DOWNLOAD_URL,
+        stream=True,
+        headers={"User-Agent": "Mozilla/5.0"},
+        allow_redirects=True,
+        timeout=180,
+    )
     resp.raise_for_status()
     with open(_ZIP_PATH, "wb") as f:
         for chunk in resp.iter_content(chunk_size=1024 * 1024):
@@ -366,26 +373,52 @@ def _download_chroma_db():
                 f.write(chunk)
 
 
+def _fix_nested_chroma_dir():
+    """如果解压后出现 data/chroma_db/chroma_db/ 嵌套，自动提一级"""
+    nested = os.path.join(_DB_DIR, "chroma_db")
+    if not os.path.isdir(nested):
+        return
+    import shutil
+    for entry in os.listdir(nested):
+        src = os.path.join(nested, entry)
+        dst = os.path.join(_DB_DIR, entry)
+        if os.path.isdir(src):
+            if os.path.exists(dst):
+                shutil.rmtree(dst)
+            shutil.move(src, dst)
+        else:
+            if os.path.exists(dst):
+                os.remove(dst)
+            shutil.move(src, dst)
+    os.rmdir(nested)
+
+
 def _ensure_rag_downloaded():
-    """确保 chroma_db 存在；首次自动从 GitHub Releases 下载（不缓存，失败了可重试）"""
+    """确保 chroma_db 存在；首次自动从 GitHub Releases 下载"""
     if _chroma_dir_ready():
         return
     try:
         with st.spinner("正在首次同步云端古籍核心数据库（约 171MB），请稍候..."):
             _download_chroma_db()
+
+        # 校验下载的 zip 文件大小（小于 5MB 说明下载到了错误网页）
+        zip_size = os.path.getsize(_ZIP_PATH)
+        if zip_size < 5 * 1024 * 1024:
+            raise RuntimeError(
+                f"下载的压缩包仅 {zip_size / 1024:.0f} KB，"
+                f"可能为错误网页。请检查 GitHub Release 链接是否有效。"
+            )
+
         with st.spinner("正在解压古籍数据库..."):
             with zipfile.ZipFile(_ZIP_PATH, "r") as zf:
                 zf.extractall(_DATA_DIR)
             os.remove(_ZIP_PATH)
+
+        # 修复可能的解压嵌套目录
+        _fix_nested_chroma_dir()
+
     except Exception as e:
-        # 写入状态文件方便排查
-        status_path = os.path.join(_DATA_DIR, "_rag_status.txt")
-        with open(status_path, "w") as sf:
-            sf.write(f"DOWNLOAD_FAILED: {e}")
-        st.warning(
-            f"古籍库同步失败（已降级为纯 AI 问答模式）。"
-            f"可能需要重启应用重试。错误: {e}"
-        )
+        st.sidebar.error(f"❌ RAG 加载失败: {type(e).__name__} - {str(e)[:200]}")
         if os.path.exists(_ZIP_PATH):
             try:
                 os.remove(_ZIP_PATH)
@@ -395,7 +428,7 @@ def _ensure_rag_downloaded():
 
 @st.cache_resource
 def _get_rag_embeddings():
-    """缓存向量模型，只加载一次"""
+    """缓存向量模型，只加载一次（CPU 运行，节省内存）"""
     from langchain_huggingface import HuggingFaceEmbeddings
     return HuggingFaceEmbeddings(
         model_name="BAAI/bge-small-zh-v1.5",
@@ -411,12 +444,18 @@ def load_rag_db():
         return None
     try:
         from langchain_chroma import Chroma
-        return Chroma(
+        db = Chroma(
             persist_directory=_DB_DIR,
             embedding_function=_get_rag_embeddings(),
             collection_name="ancient_books",
         )
-    except Exception:
+        # 成功加载后，在侧边栏显示成功提示（仅首次）
+        if not st.session_state.get(_RAG_STATUS_KEY):
+            st.sidebar.success("📚 古籍知识库已就绪")
+            st.session_state[_RAG_STATUS_KEY] = True
+        return db
+    except Exception as e:
+        st.sidebar.error(f"❌ ChromaDB 初始化失败: {type(e).__name__} - {str(e)[:200]}")
         return None
 
 
