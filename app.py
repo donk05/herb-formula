@@ -348,12 +348,23 @@ _RAG_ERROR_MSG = None
 
 
 def _chroma_dir_ready() -> bool:
+    """要求目录存在、包含 chroma.sqlite3，且 sqlite3 非空（>10KB 说明有真实向量数据）"""
     if not os.path.isdir(_DB_DIR):
         return False
+    sqlite_path = os.path.join(_DB_DIR, "chroma.sqlite3")
+    if not os.path.isfile(sqlite_path):
+        # 目录存在但缺核心文件 → 视为无效，清理后重新下载
+        try:
+            import shutil
+            shutil.rmtree(_DB_DIR, ignore_errors=True)
+        except OSError:
+            pass
+        return False
     try:
-        return bool(os.listdir(_DB_DIR))
+        size = os.path.getsize(sqlite_path)
     except OSError:
         return False
+    return size > 10 * 1024
 
 
 def _download_chroma_db():
