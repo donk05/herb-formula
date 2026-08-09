@@ -9,3 +9,6 @@ __pycache__/
 output/
 *.pyc
 .streamlit/secrets.toml
+data/literature.db
+data/chroma_db/
+data/*.zip

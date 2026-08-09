@@ -305,7 +305,7 @@ def fetch_paper_from_db(herb: str, disease: str):
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
-            "SELECT title, abstract, keywords, url FROM papers WHERE herb=? "
+            "SELECT title, abstract, keywords, url, source FROM papers WHERE herb=? "
             "AND (disease=? OR ? LIKE '%' || disease || '%') LIMIT 3",
             (herb, disease, disease),
         )
@@ -916,7 +916,16 @@ with left_col:
                     if idx > 0:
                         st.divider()
                     title = paper.get("title") or "无标题"
-                    st.markdown(f"**{title}**")
+                    src = paper.get("source") or ""
+                    if src == "CNKI":
+                        src_badge = ('<span style="font-size:0.75rem;color:#fff;background:#E65100;'
+                                     'padding:2px 8px;border-radius:10px;margin-left:6px;">知网</span>')
+                    elif src == "PubMed":
+                        src_badge = ('<span style="font-size:0.75rem;color:#fff;background:#1565C0;'
+                                     'padding:2px 8px;border-radius:10px;margin-left:6px;">PubMed</span>')
+                    else:
+                        src_badge = ""
+                    st.markdown(f"**{title}**{src_badge}", unsafe_allow_html=True)
                     kw = paper.get("keywords")
                     if kw:
                         tags = " | ".join(
