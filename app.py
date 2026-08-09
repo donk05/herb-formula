@@ -301,10 +301,17 @@ _LITERATURE_DB_URL = (
 _LITERATURE_DB_PATH = os.path.join(_project_root, "data", "literature.db")
 
 
+_LITERATURE_ATTEMPTED = False
+
+
 def _ensure_literature_db():
     """确保 literature.db 存在，首次自动从 GitHub Releases 下载"""
+    global _LITERATURE_ATTEMPTED, _RAG_ERROR_MSG
     if os.path.exists(_LITERATURE_DB_PATH):
-        return
+        return True
+    if _LITERATURE_ATTEMPTED:
+        return False
+    _LITERATURE_ATTEMPTED = True
     try:
         import requests
         with st.spinner("正在同步文献数据库（约 130MB），请稍候..."):
@@ -320,8 +327,18 @@ def _ensure_literature_db():
                 for chunk in resp.iter_content(chunk_size=1024 * 1024):
                     if chunk:
                         f.write(chunk)
+        # 校验下载的数据库有效
+        if not os.path.exists(_LITERATURE_DB_PATH) or os.path.getsize(_LITERATURE_DB_PATH) < 5 * 1024 * 1024:
+            raise RuntimeError("下载的文献库文件无效或过小")
+        return True
     except Exception as e:
         _RAG_ERROR_MSG = f"❌ 文献库下载失败: {type(e).__name__} - {str(e)[:200]}"
+        if os.path.exists(_LITERATURE_DB_PATH):
+            try:
+                os.remove(_LITERATURE_DB_PATH)
+            except OSError:
+                pass
+        return False
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -382,9 +399,6 @@ def has_literature(herb: str, disease: str) -> bool:
         return result
     except Exception:
         return False
-
-# 启动时预下载文献数据库（云端首次自动拉取）
-_ensure_literature_db()
 
 # ==================== 古籍 RAG 知识库 ====================
 _CHROMA_DOWNLOAD_URL = (
@@ -1109,6 +1123,21 @@ else:
     )
     if _RAG_ERROR_MSG:
         st.error(_RAG_ERROR_MSG)
+
+# 文献库状态指示器
+_lit_ok = _ensure_literature_db()
+if _lit_ok:
+    st.markdown(
+        '<span style="font-size:0.82rem;color:#1565C0;background:#E3F2FD;'
+        'padding:3px 10px;border-radius:12px;margin-left:6px;">📄 文献库已就绪</span>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
+        'padding:3px 10px;border-radius:12px;margin-left:6px;">📄 文献库未加载</span>',
+        unsafe_allow_html=True,
+    )
 
 st.markdown('<div class="search-box">', unsafe_allow_html=True)
 with st.form("diet_chat_form", clear_on_submit=True, border=False):
