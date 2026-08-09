@@ -326,7 +326,7 @@ def _ensure_literature_db():
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_paper_from_db(herb: str, disease: str):
-    """从 SQLite 查询与指定中药-疾病相关的文献，最多返回 3 篇"""
+    """从 SQLite 查询与指定中药-疾病相关的文献，最多返回 4 篇（PubMed/知网各 2 篇）"""
     _ensure_literature_db()
     db_path = _LITERATURE_DB_PATH
     if not os.path.exists(db_path):
@@ -337,28 +337,28 @@ def fetch_paper_from_db(herb: str, disease: str):
         where_sql = "herb=? AND (disease=? OR ? LIKE '%' || disease || '%')"
         params = (herb, disease, disease)
 
-        # 从两个来源各取 3 条，避免全被 PubMed 占据
+        # 两来源各取 2 条，保证知网有同等展示机会
         pubmed = [dict(r) for r in conn.execute(
             f"SELECT title, abstract, keywords, url, source FROM papers "
-            f"WHERE {where_sql} AND source='PubMed' LIMIT 3", params
+            f"WHERE {where_sql} AND source='PubMed' LIMIT 2", params
         )]
         cnki = [dict(r) for r in conn.execute(
             f"SELECT title, abstract, keywords, url, source FROM papers "
-            f"WHERE {where_sql} AND source='CNKI' LIMIT 3", params
+            f"WHERE {where_sql} AND source='CNKI' LIMIT 2", params
         )]
         conn.close()
 
-        # 交替混合，最多 3 篇
+        # 交替混合
         rows = []
         for p, c in zip(pubmed, cnki):
             rows.append(p)
             rows.append(c)
-        # 补齐剩余（若某个来源不足 3 条）
+        # 补齐剩余（若某个来源不足 2 条）
         for p in pubmed[len(cnki):]:
             rows.append(p)
         for c in cnki[len(pubmed):]:
             rows.append(c)
-        return rows[:3]
+        return rows[:4]
     except Exception:
         return []
 
