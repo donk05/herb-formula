@@ -559,19 +559,57 @@ def load_rag_db():
         return None
 
 
-def retrieve_ancient_books(query: str, k: int = 3):
-    db = load_rag_db()
-    if db is None:
-        return []
+_FANGJI_DB_DIR = os.path.join(_project_root, "data", "chroma_db_fangji")
+
+
+@st.cache_resource(show_spinner=False)
+def _load_fangji_chroma():
+    """加载方剂书 ChromaDB（data/chroma_db_fangji，随仓库部署，无需下载）"""
+    if not os.path.isdir(_FANGJI_DB_DIR) or not os.path.isfile(
+        os.path.join(_FANGJI_DB_DIR, "chroma.sqlite3")
+    ):
+        return None
     try:
-        docs = db.similarity_search(query, k=k)
-    except Exception as e:
-        _RAG_ERROR_MSG = f"❌ 古籍检索失败: {type(e).__name__} - {str(e)[:200]}"
-        return []
-    return [
-        {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
-        for doc in docs
-    ]
+        from langchain_chroma import Chroma
+        return Chroma(
+            persist_directory=_FANGJI_DB_DIR,
+            embedding_function=_get_rag_embeddings(),
+            collection_name="fangji_books",
+        )
+    except Exception:
+        return None
+
+
+def retrieve_ancient_books(query: str, k: int = 3):
+    """同时检索古籍库 + 方剂库，合并返回"""
+    global _RAG_ERROR_MSG
+    results = []
+
+    # 古籍库
+    db = load_rag_db()
+    if db is not None:
+        try:
+            docs = db.similarity_search(query, k=k)
+            results.extend(
+                {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
+                for doc in docs
+            )
+        except Exception as e:
+            _RAG_ERROR_MSG = f"❌ 古籍检索失败: {type(e).__name__} - {str(e)[:200]}"
+
+    # 方剂库
+    fdb = _load_fangji_chroma()
+    if fdb is not None:
+        try:
+            docs = fdb.similarity_search(query, k=k)
+            results.extend(
+                {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
+                for doc in docs
+            )
+        except Exception as e:
+            _RAG_ERROR_MSG = f"❌ 方剂检索失败: {type(e).__name__} - {str(e)[:200]}"
+
+    return results
 
 # ==================== Gemini 膳食助手 API ====================
 DIET_SYSTEM_INSTRUCTION = (
@@ -1127,6 +1165,26 @@ else:
     )
     if _RAG_ERROR_MSG:
         st.error(_RAG_ERROR_MSG)
+
+# 方剂库状态指示器
+_fangji_db_instance = _load_fangji_chroma()
+if _fangji_db_instance is not None:
+    try:
+        _fangji_count = _fangji_db_instance._collection.count()
+    except Exception:
+        _fangji_count = -1
+    st.markdown(
+        f'<span style="font-size:0.82rem;color:#6A1B9A;background:#F3E5F5;'
+        f'padding:3px 10px;border-radius:12px;margin-left:6px;">📜 方剂库已就绪'
+        f'（{_fangji_count} 条）</span>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
+        'padding:3px 10px;border-radius:12px;margin-left:6px;">📜 方剂库未加载</span>',
+        unsafe_allow_html=True,
+    )
 
 # 文献库状态指示器
 _lit_ok = _ensure_literature_db()
