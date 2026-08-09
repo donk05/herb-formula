@@ -466,7 +466,11 @@ def retrieve_ancient_books(query: str, k: int = 3):
     db = load_rag_db()
     if db is None:
         return []
-    docs = db.similarity_search(query, k=k)
+    try:
+        docs = db.similarity_search(query, k=k)
+    except Exception as e:
+        _RAG_ERROR_MSG = f"❌ 古籍检索失败: {type(e).__name__} - {str(e)[:200]}"
+        return []
     return [
         {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
         for doc in docs
@@ -1070,14 +1074,18 @@ if st.session_state.diet_messages:
                 st.markdown(msg["content"])
 
 # 古籍原文依据面板
-if "diet_rag_docs" in st.session_state and st.session_state.diet_rag_docs:
+if "diet_rag_docs" in st.session_state:
     rag_docs = st.session_state.diet_rag_docs
-    with st.expander("📜 查看 AI 引用的古籍原文依据", expanded=False):
-        for i, doc in enumerate(rag_docs, 1):
-            st.markdown(f"**📖 《{doc['book_name']}》**")
-            st.info(doc["content"])
-            if i < len(rag_docs):
-                st.divider()
+    if rag_docs:
+        with st.expander("📜 查看 AI 引用的古籍原文依据", expanded=False):
+            for i, doc in enumerate(rag_docs, 1):
+                st.markdown(f"**📖 《{doc['book_name']}》**")
+                st.info(doc["content"])
+                if i < len(rag_docs):
+                    st.divider()
+    elif load_rag_db() is not None:
+        # RAG 已加载但当前问题没检索到匹配古籍
+        st.info("💡 本次问题未在古籍库中找到直接匹配的原文，AI 依据自身知识作答。")
 
 # ==================== 页脚 ====================
 st.markdown("---")
