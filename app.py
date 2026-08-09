@@ -863,6 +863,7 @@ with st.sidebar:
     with c1:
         if st.button("🔄 刷新缓存", use_container_width=True):
             st.cache_resource.clear()
+            st.cache_data.clear()
             st.rerun()
     with c2:
         st.caption(f"默认 {len(all_diseases_default)} 种疾病可查")
@@ -914,6 +915,9 @@ c4.metric("📋 疾病英文名", en_name[:25])
 # ==================== 中药排名 + 图表 ====================
 st.markdown(f"### 🏆 「{selected_disease}」关联中药 Top {min(top_k, len(ranked))}")
 st.caption(f"按靶点覆盖度排序，共 {stats['相关中药数']} 种药食同源中药与该疾病在分子层面存在关联")
+
+# 在中药卡片渲染前确保文献库已下载，避免卡片查询缓存到空结果
+_ensure_literature_db()
 
 left_col, right_col = st.columns([5, 4], gap="large")
 
