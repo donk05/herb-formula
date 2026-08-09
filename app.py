@@ -346,25 +346,39 @@ _DATA_DIR = os.path.join(_project_root, "data")
 # 全局变量：记录下载过程中的错误（主页面直接显示，不会错过）
 _RAG_ERROR_MSG = None
 
+# 版本标记：每次重新打包上传后递增，旧库无此标记会自动清理重下
+_RAG_VERSION = "v2"
+_RAG_MARKER = os.path.join(_DB_DIR, ".rag_version")
+
 
 def _chroma_dir_ready() -> bool:
-    """要求目录存在、包含 chroma.sqlite3，且 sqlite3 非空（>10KB 说明有真实向量数据）"""
+    """要求目录存在、chroma.sqlite3 非空，且带当前版本标记"""
     if not os.path.isdir(_DB_DIR):
         return False
     sqlite_path = os.path.join(_DB_DIR, "chroma.sqlite3")
-    if not os.path.isfile(sqlite_path):
-        # 目录存在但缺核心文件 → 视为无效，清理后重新下载
-        try:
-            import shutil
-            shutil.rmtree(_DB_DIR, ignore_errors=True)
-        except OSError:
-            pass
-        return False
+    has_sqlite = os.path.isfile(sqlite_path)
     try:
-        size = os.path.getsize(sqlite_path)
+        sqlite_ok = has_sqlite and os.path.getsize(sqlite_path) > 10 * 1024
     except OSError:
-        return False
-    return size > 10 * 1024
+        sqlite_ok = False
+    # 版本标记必须与当前一致
+    marker_ok = False
+    try:
+        with open(_RAG_MARKER, "r") as mf:
+            marker_ok = mf.read().strip() == _RAG_VERSION
+    except OSError:
+        marker_ok = False
+
+    if sqlite_ok and marker_ok:
+        return True
+
+    # 无效或过期 → 清理后重新下载
+    try:
+        import shutil
+        shutil.rmtree(_DB_DIR, ignore_errors=True)
+    except OSError:
+        pass
+    return False
 
 
 def _download_chroma_db():
@@ -428,6 +442,13 @@ def _ensure_rag_downloaded():
             os.remove(_ZIP_PATH)
 
         _fix_nested_chroma_dir()
+
+        # 解压成功后写入版本标记，避免下次误判为空库
+        try:
+            with open(_RAG_MARKER, "w") as mf:
+                mf.write(_RAG_VERSION)
+        except OSError:
+            pass
         return True
 
     except Exception as e:
