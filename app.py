@@ -295,10 +295,40 @@ def fuzzy_search(query, candidates, top_k=8):
     return [c for c, s in scored[:top_k] if s > 0]
 
 # ==================== 文献知识检索 ====================
+_LITERATURE_DB_URL = (
+    "https://github.com/donk05/herb-formula/releases/download/v1.1/literature.db"
+)
+_LITERATURE_DB_PATH = os.path.join(_project_root, "data", "literature.db")
+
+
+def _ensure_literature_db():
+    """确保 literature.db 存在，首次自动从 GitHub Releases 下载"""
+    if os.path.exists(_LITERATURE_DB_PATH):
+        return
+    try:
+        import requests
+        with st.spinner("正在同步文献数据库（约 130MB），请稍候..."):
+            resp = requests.get(
+                _LITERATURE_DB_URL,
+                stream=True,
+                headers={"User-Agent": "Mozilla/5.0"},
+                allow_redirects=True,
+                timeout=180,
+            )
+            resp.raise_for_status()
+            with open(_LITERATURE_DB_PATH, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+    except Exception as e:
+        _RAG_ERROR_MSG = f"❌ 文献库下载失败: {type(e).__name__} - {str(e)[:200]}"
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_paper_from_db(herb: str, disease: str):
     """从 SQLite 查询与指定中药-疾病相关的文献，最多返回 3 篇"""
-    db_path = os.path.join(_project_root, "data", "literature.db")
+    _ensure_literature_db()
+    db_path = _LITERATURE_DB_PATH
     if not os.path.exists(db_path):
         return []
     try:
@@ -319,7 +349,8 @@ def fetch_paper_from_db(herb: str, disease: str):
 @st.cache_data(ttl=1800, show_spinner=False)
 def has_literature(herb: str, disease: str) -> bool:
     """轻量级预检：该中药-疾病组合在文献库中是否有记录"""
-    db_path = os.path.join(_project_root, "data", "literature.db")
+    _ensure_literature_db()
+    db_path = _LITERATURE_DB_PATH
     if not os.path.exists(db_path):
         return False
     try:
@@ -334,6 +365,9 @@ def has_literature(herb: str, disease: str) -> bool:
         return result
     except Exception:
         return False
+
+# 启动时预下载文献数据库（云端首次自动拉取）
+_ensure_literature_db()
 
 # ==================== 古籍 RAG 知识库 ====================
 _CHROMA_DOWNLOAD_URL = (
