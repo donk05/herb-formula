@@ -334,14 +334,31 @@ def fetch_paper_from_db(herb: str, disease: str):
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            "SELECT title, abstract, keywords, url, source FROM papers WHERE herb=? "
-            "AND (disease=? OR ? LIKE '%' || disease || '%') LIMIT 3",
-            (herb, disease, disease),
-        )
-        rows = [dict(r) for r in cursor.fetchall()]
+        where_sql = "herb=? AND (disease=? OR ? LIKE '%' || disease || '%')"
+        params = (herb, disease, disease)
+
+        # 从两个来源各取 3 条，避免全被 PubMed 占据
+        pubmed = [dict(r) for r in conn.execute(
+            f"SELECT title, abstract, keywords, url, source FROM papers "
+            f"WHERE {where_sql} AND source='PubMed' LIMIT 3", params
+        )]
+        cnki = [dict(r) for r in conn.execute(
+            f"SELECT title, abstract, keywords, url, source FROM papers "
+            f"WHERE {where_sql} AND source='CNKI' LIMIT 3", params
+        )]
         conn.close()
-        return rows
+
+        # 交替混合，最多 3 篇
+        rows = []
+        for p, c in zip(pubmed, cnki):
+            rows.append(p)
+            rows.append(c)
+        # 补齐剩余（若某个来源不足 3 条）
+        for p in pubmed[len(cnki):]:
+            rows.append(p)
+        for c in cnki[len(pubmed):]:
+            rows.append(c)
+        return rows[:3]
     except Exception:
         return []
 
