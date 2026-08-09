@@ -296,7 +296,7 @@ def fuzzy_search(query, candidates, top_k=8):
 
 # ==================== 文献知识检索 ====================
 _LITERATURE_DB_URL = (
-    "https://github.com/donk05/herb-formula/releases/download/v1.1/literature.db"
+    "https://github.com/donk05/herb-formula/releases/download/V1.1/literature.db"
 )
 _LITERATURE_DB_PATH = os.path.join(_project_root, "data", "literature.db")
 
