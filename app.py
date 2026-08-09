@@ -996,11 +996,17 @@ st.markdown("### 🍽️ 亚健康调理建议")
 st.caption("基于知识图谱 + AI 大模型，为您提供个性化的药食同源膳食方案")
 
 # RAG 状态指示器
-_rag_loaded = load_rag_db() is not None
+_rag_db_instance = load_rag_db()
+_rag_loaded = _rag_db_instance is not None
 if _rag_loaded:
+    try:
+        _rag_count = _rag_db_instance._collection.count()
+    except Exception:
+        _rag_count = -1
     st.markdown(
-        '<span style="font-size:0.82rem;color:#2E7D32;background:#E8F5E9;'
-        'padding:3px 10px;border-radius:12px;">📚 古籍知识库已就绪</span>',
+        f'<span style="font-size:0.82rem;color:#2E7D32;background:#E8F5E9;'
+        f'padding:3px 10px;border-radius:12px;">📚 古籍知识库已就绪'
+        f'（{_rag_count} 条）</span>',
         unsafe_allow_html=True,
     )
 else:
