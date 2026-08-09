@@ -429,7 +429,7 @@ def _ensure_rag_downloaded():
         return False
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def _get_rag_embeddings():
     from langchain_huggingface import HuggingFaceEmbeddings
     return HuggingFaceEmbeddings(
@@ -439,18 +439,24 @@ def _get_rag_embeddings():
     )
 
 
+@st.cache_resource(show_spinner=False)
+def _load_chroma_ready():
+    """加载 ChromaDB（仅当 chroma_db 目录就绪后调用），结果常驻缓存"""
+    from langchain_chroma import Chroma
+    return Chroma(
+        persist_directory=_DB_DIR,
+        embedding_function=_get_rag_embeddings(),
+        collection_name="ancient_books",
+    )
+
+
 def load_rag_db():
+    """返回 Chroma 实例或 None；下载失败不会污染缓存，可重试"""
     global _RAG_ERROR_MSG
-    ok = _ensure_rag_downloaded()
-    if not ok:
+    if not _ensure_rag_downloaded():
         return None
     try:
-        from langchain_chroma import Chroma
-        return Chroma(
-            persist_directory=_DB_DIR,
-            embedding_function=_get_rag_embeddings(),
-            collection_name="ancient_books",
-        )
+        return _load_chroma_ready()
     except Exception as e:
         _RAG_ERROR_MSG = f"❌ ChromaDB 初始化失败: {type(e).__name__} - {str(e)[:300]}"
         return None
