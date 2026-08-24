@@ -580,8 +580,29 @@ def _load_fangji_chroma():
         return None
 
 
+_YANGSHENG_DB_DIR = os.path.join(_project_root, "data", "chroma_db_yangsheng")
+
+
+@st.cache_resource(show_spinner=False)
+def _load_yangsheng_chroma():
+    """加载养生书 ChromaDB（data/chroma_db_yangsheng，随仓库部署，无需下载）"""
+    if not os.path.isdir(_YANGSHENG_DB_DIR) or not os.path.isfile(
+        os.path.join(_YANGSHENG_DB_DIR, "chroma.sqlite3")
+    ):
+        return None
+    try:
+        from langchain_chroma import Chroma
+        return Chroma(
+            persist_directory=_YANGSHENG_DB_DIR,
+            embedding_function=_get_rag_embeddings(),
+            collection_name="yangsheng_books",
+        )
+    except Exception:
+        return None
+
+
 def retrieve_ancient_books(query: str, k: int = 3):
-    """同时检索古籍库 + 方剂库，合并返回"""
+    """同时检索古籍库 + 方剂库 + 养生库，合并返回"""
     global _RAG_ERROR_MSG
     results = []
 
@@ -608,6 +629,18 @@ def retrieve_ancient_books(query: str, k: int = 3):
             )
         except Exception as e:
             _RAG_ERROR_MSG = f"❌ 方剂检索失败: {type(e).__name__} - {str(e)[:200]}"
+
+    # 养生库
+    ydb = _load_yangsheng_chroma()
+    if ydb is not None:
+        try:
+            docs = ydb.similarity_search(query, k=k)
+            results.extend(
+                {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
+                for doc in docs
+            )
+        except Exception as e:
+            _RAG_ERROR_MSG = f"❌ 养生库检索失败: {type(e).__name__} - {str(e)[:200]}"
 
     return results
 
@@ -1183,6 +1216,26 @@ else:
     st.markdown(
         '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
         'padding:3px 10px;border-radius:12px;margin-left:6px;">📜 方剂库未加载</span>',
+        unsafe_allow_html=True,
+    )
+
+# 养生库状态指示器
+_yangsheng_db_instance = _load_yangsheng_chroma()
+if _yangsheng_db_instance is not None:
+    try:
+        _yangsheng_count = _yangsheng_db_instance._collection.count()
+    except Exception:
+        _yangsheng_count = -1
+    st.markdown(
+        f'<span style="font-size:0.82rem;color:#00695C;background:#E0F2F1;'
+        f'padding:3px 10px;border-radius:12px;margin-left:6px;">🧘 养生库已就绪'
+        f'（{_yangsheng_count} 条）</span>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
+        'padding:3px 10px;border-radius:12px;margin-left:6px;">🧘 养生库未加载</span>',
         unsafe_allow_html=True,
     )
 
