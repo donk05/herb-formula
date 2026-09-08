@@ -15,7 +15,22 @@ from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
 
-plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "WenQuanYi Zen Hei", "DejaVu Sans"]
+# Bundled CJK font so matplotlib renders Chinese on servers without an apt fonts package
+import matplotlib.font_manager as _fm
+_BUNDLED_FONT_DIR = os.path.join(_project_root, "assets", "fonts")
+if os.path.isdir(_BUNDLED_FONT_DIR):
+    for _fn in sorted(os.listdir(_BUNDLED_FONT_DIR)):
+        if _fn.lower().endswith((".ttf", ".otf", ".ttc")):
+            try:
+                _fm.fontManager.addfont(os.path.join(_BUNDLED_FONT_DIR, _fn))
+            except Exception:
+                pass
+_CJK_FONTS = ["Noto Sans CJK SC", "WenQuanYi Zen Hei", "Microsoft YaHei", "SimHei", "DejaVu Sans"]
+_available = {_f.name for _f in _fm.fontManager.ttflist}
+for _name in _CJK_FONTS:
+    if _name in _available:
+        plt.rcParams["font.sans-serif"] = _CJK_FONTS[_CJK_FONTS.index(_name):]
+        break
 plt.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="药食同源智能配方", page_icon="🌿", layout="wide")
