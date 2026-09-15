@@ -1115,7 +1115,7 @@ else:
     matched = all_diseases_default
     default_idx = matched.index("高血压") if "高血压" in matched else 0
 
-control_cols = st.columns([5, 3, 2], gap="small", vertical_alignment="bottom")
+control_cols = st.columns([4.4, 2.2, 2.1, 1.8], gap="small", vertical_alignment="bottom")
 with control_cols[0]:
     if matched:
         selected_disease = st.selectbox(
@@ -1128,6 +1128,10 @@ with control_cols[0]:
 with control_cols[1]:
     top_k = st.slider("展示 Top N", 5, 30, 15, key="top_k_control")
 with control_cols[2]:
+    formula_size = st.select_slider(
+        "组合候选味数", options=[3, 4, 5], value=3, key="formula_size_control"
+    )
+with control_cols[3]:
     generate_btn = st.button(
         "查询知识图谱", type="primary", use_container_width=True,
         disabled=(selected_disease is None), key="query_graph_top",
@@ -1147,6 +1151,7 @@ if generate_btn and selected_disease:
         st.session_state.diet_rag_docs = []
     st.session_state.query_disease = selected_disease
     st.session_state.query_top_k = top_k
+    st.session_state.query_formula_size = int(formula_size)
     st.session_state.query_active = True
 
 # 初始化查询持久化状态
@@ -1178,6 +1183,7 @@ if not st.session_state.query_active:
 # 从 session_state 取持久化的查询参数（chat_input 重跑时不会丢失）
 selected_disease = st.session_state.query_disease
 top_k = st.session_state.query_top_k
+formula_size = st.session_state.get("query_formula_size", 3)
 
 # ==================== 查询 ====================
 with st.spinner("🌿 知识图谱检索中，深度分析疾病-靶点-化合物-中药关系链…"):
@@ -1199,6 +1205,62 @@ c1.metric("🔬 关联靶点", f"{stats['关联靶点数']} 个")
 c2.metric("🧪 关联化合物", f"{stats['关联化合物数']} 个")
 c3.metric("🌱 相关中药", f"{stats['相关中药数']} 种")
 c4.metric("📋 疾病英文名", en_name[:25])
+
+# ==================== 多味组合候选 ====================
+# 组合候选使用至少 Top15 作为搜索池；页面上的 Top N 仍然只控制单味排名展示。
+formula_recommendations = loader.recommend_herb_combinations(
+    selected_disease,
+    candidate_k=max(15, top_k),
+    formula_size=formula_size,
+    max_alternatives=3,
+)
+
+if formula_recommendations:
+    primary_formula = formula_recommendations[0]
+    st.markdown("### 🧩 疾病相关组合候选")
+    st.caption(
+        "基于疾病相关靶点的边际覆盖生成；组合中的‘互补’仅表示网络证据互补，"
+        "不包含剂量、禁忌、君臣佐使或临床疗效判断。"
+    )
+
+    formula_cols = st.columns(4)
+    formula_cols[0].metric("候选味数", f"{primary_formula['组合规模']} 味")
+    formula_cols[1].metric("覆盖靶点", f"{primary_formula['覆盖靶点数']} 个")
+    formula_cols[2].metric("靶点覆盖率", f"{primary_formula['靶点覆盖率']:.1%}")
+    formula_cols[3].metric("关联化合物", f"{primary_formula['组合关联化合物数']} 个")
+
+    st.markdown(
+        "**主组合候选：** "
+        + " ＋ ".join(primary_formula["中药名列表"])
+    )
+    with st.expander("查看主组合的新增靶点贡献", expanded=True):
+        for member in primary_formula["组合成员"]:
+            new_targets = "、".join(
+                target_name for _, target_name in member["新增靶点"][:8]
+            ) or "无新增疾病靶点"
+            if len(member["新增靶点"]) > 8:
+                new_targets += " 等"
+            st.markdown(
+                f"**{member['中药名']}**（原始排名 #{member['原始排名']}）  "
+                f"新增靶点 **{member['新增靶点数']}** 个、"
+                f"新增化合物 **{member['新增化合物数']}** 个  \n"
+                f"新增靶点：{new_targets}"
+            )
+        st.caption(
+            f"候选池为当前单味排序前 {primary_formula['候选池大小']} 味；"
+            f"{primary_formula['停止原因']}。"
+        )
+
+    for alt_index, formula in enumerate(formula_recommendations[1:], start=1):
+        with st.expander(
+            f"备选组合 {alt_index}：{' ＋ '.join(formula['中药名列表'])}"
+        ):
+            st.markdown(
+                f"覆盖靶点 **{formula['覆盖靶点数']} / {formula['疾病靶点数']}**，"
+                f"覆盖率 **{formula['靶点覆盖率']:.1%}**，"
+                f"关联化合物 **{formula['组合关联化合物数']}** 个。"
+            )
+            st.caption(formula["停止原因"])
 
 # ==================== 中药排名 + 图表 ====================
 st.markdown(f"### 🏆 「{selected_disease}」关联中药 Top {min(top_k, len(ranked))}")
@@ -1421,6 +1483,12 @@ graph_context = (
     f"关联化合物 {stats['关联化合物数']} 个、相关中药 {stats['相关中药数']} 种。"
     f"当前推荐中药包括：{'、'.join(item['中药名'] for item in ranked[:5])}。"
 )
+if formula_recommendations:
+    graph_context += (
+        "网络覆盖候选组合（仅为知识图谱推理，不是临床处方）："
+        + "；".join("、".join(item["中药名列表"]) for item in formula_recommendations[:3])
+        + "。"
+    )
 
 portal_lifestyle_clicked = False
 portal_diet_clicked = False

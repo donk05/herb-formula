@@ -473,6 +473,9 @@ class GraphDataLoader:
         # 元数据
         self.target_names: Dict[str, str] = {}   # 靶点ID → 靶点名称
         self.compound_names: Dict[str, str] = {} # 化合物ID → 化合物名称
+        # 整合.xlsx 中的可选化合物元数据。这里只记录成分属性覆盖情况，
+        # 不把 QED/FDAMDD 解释为疗效、剂量或安全性评分。
+        self.compound_quality: Dict[str, Dict[str, List]] = {}
         self.disease_names: Dict[str, str] = {}  # 疾病ID → 疾病名称
         self.all_herbs: List[str] = []           # 所有药食同源中药名
         self.all_diseases_cn: List[str] = []     # 可查询的中文疾病名
@@ -491,6 +494,7 @@ class GraphDataLoader:
                     cache = pickle.load(f)
                 for key, val in cache.items():
                     setattr(self, key, val)
+                self._load_integrated_component_quality()
                 print(f"从缓存加载图谱: {len(self.all_diseases_cn)} 种疾病, {len(self.all_herbs)} 种中药")
                 return
             except Exception:
@@ -526,6 +530,7 @@ class GraphDataLoader:
         ]
 
         self._build_indices()
+        self._load_integrated_component_quality()
 
         # 保存缓存供下次快速加载
         try:
@@ -538,6 +543,7 @@ class GraphDataLoader:
                 "herb_to_compounds": self.herb_to_compounds,
                 "target_names": self.target_names,
                 "compound_names": self.compound_names,
+                "compound_quality": self.compound_quality,
                 "all_diseases_cn": self.all_diseases_cn,
                 "all_english_diseases": self.all_english_diseases,
                 "all_diseases_cn_quality": self.all_diseases_cn_quality,
@@ -547,6 +553,76 @@ class GraphDataLoader:
                 pickle.dump(cache, f, protocol=pickle.HIGHEST_PROTOCOL)
         except Exception:
             pass
+
+    @staticmethod
+    def _split_integrated_values(value) -> List[str]:
+        """拆分整合表中用分号合并的 ID/名称，并过滤空值。"""
+        if value is None or pd.isna(value):
+            return []
+        return [part.strip() for part in str(value).split(";") if part.strip()]
+
+    def _load_integrated_component_quality(self) -> None:
+        """
+        可选加载 data/整合.xlsx 的成分元数据。
+
+        该文件不是主知识图谱，也不是方剂/剂量表。它的部分单元格包含多个
+        化合物 ID，因此只按 HBIN ID 建立元数据索引，不把同一行的多个中药
+        与多个化合物做笛卡尔积关联。
+        """
+        self.compound_quality = {}
+        integrated_path = self.filepath.parent / "整合.xlsx"
+        if not integrated_path.exists():
+            return
+
+        try:
+            xls = pd.ExcelFile(integrated_path)
+            sheet = next(
+                (name for name in xls.sheet_names if "两库共有" in str(name) or "共有" in str(name)),
+                xls.sheet_names[0],
+            )
+            df = pd.read_excel(xls, sheet_name=sheet)
+        except Exception:
+            return
+
+        # 预期列按位置为：序号、成分名称、分子式、分子量、QED、FDAMDD、中药、化合物ID。
+        if df.shape[1] < 8:
+            return
+
+        values_by_compound: Dict[str, Dict[str, Set]] = {}
+        for _, row in df.iterrows():
+            compound_ids = self._split_integrated_values(row.iloc[7])
+            if not compound_ids:
+                continue
+
+            component_name = str(row.iloc[1]).strip()
+            formula = str(row.iloc[2]).strip()
+            numeric_values = {}
+            for key, index in (("分子量", 3), ("QED", 4), ("FDAMDD", 5)):
+                value = pd.to_numeric(row.iloc[index], errors="coerce")
+                numeric_values[key] = None if pd.isna(value) else float(value)
+
+            for compound_id in compound_ids:
+                record = values_by_compound.setdefault(
+                    compound_id,
+                    {"成分名称": set(), "分子式": set(), "分子量": set(), "QED": set(), "FDAMDD": set()},
+                )
+                if component_name and component_name.lower() != "nan":
+                    record["成分名称"].add(component_name)
+                if formula and formula.lower() != "nan":
+                    record["分子式"].add(formula)
+                for key, value in numeric_values.items():
+                    if value is not None:
+                        record[key].add(value)
+
+        # 转成可序列化、稳定排序的结构，便于缓存和页面使用。
+        self.compound_quality = {
+            compound_id: {
+                key: sorted(values)
+                for key, values in record.items()
+                if values
+            }
+            for compound_id, record in values_by_compound.items()
+        }
 
     # ===================== 构建索引 =====================
 
@@ -758,6 +834,170 @@ class GraphDataLoader:
 
         ranked.sort(key=lambda x: (x["关联靶点数"], x["关联化合物数"]), reverse=True)
         return ranked[:top_k]
+
+    def recommend_herb_combinations(
+        self,
+        cn_disease: str,
+        candidate_k: int = 15,
+        formula_size: int = 3,
+        max_alternatives: int = 3,
+    ) -> List[Dict]:
+        """
+        基于疾病相关靶点的边际覆盖，生成多味中药候选组合。
+
+        这是“网络证据组合候选”，不是临床处方，也不包含剂量、君臣佐使、
+        禁忌或疗效保证。选择优先级固定为：
+          1. 新增疾病相关靶点数；
+          2. 新增疾病相关化合物数；
+          3. 整合.xlsx 中有元数据的新增化合物数（仅作元数据覆盖数）；
+          4. 当前单味中药排名。
+
+        返回多个以不同种子生成的候选组合，便于页面展示一个主推荐和少量备选。
+        内部关联始终使用靶点 ID / 化合物 ID，名称只用于展示。
+        """
+        candidate_k = max(1, int(candidate_k))
+        formula_size = max(1, int(formula_size))
+        max_alternatives = max(1, int(max_alternatives))
+
+        disease_target_ids = set(self.get_targets_by_disease(cn_disease))
+        if not disease_target_ids:
+            return []
+
+        # 疾病靶点 → 化合物 → 中药，构建每味中药在当前疾病下的局部网络。
+        herb_targets: Dict[str, Set[str]] = {}
+        herb_compounds: Dict[str, Set[str]] = {}
+        for target_id in disease_target_ids:
+            for compound_id in self.target_to_compounds.get(target_id, set()):
+                for herb_name in self.compound_to_herbs.get(compound_id, set()):
+                    herb_targets.setdefault(herb_name, set()).add(target_id)
+                    herb_compounds.setdefault(herb_name, set()).add(compound_id)
+
+        # 使用现有单味排序作为候选池和最终平局裁决，不改变 Top15 的含义。
+        ranked_all = self.rank_herbs_for_disease(
+            cn_disease,
+            top_k=max(candidate_k, len(self.all_herbs), 1),
+        )
+        ranked_all = [item for item in ranked_all if item["中药名"] in herb_targets]
+        candidate_items = ranked_all[:candidate_k]
+        if not candidate_items:
+            return []
+
+        rank_by_herb = {
+            item["中药名"]: index
+            for index, item in enumerate(ranked_all, start=1)
+        }
+        integrated_compound_ids = set(self.compound_quality)
+
+        def _target_sort_key(target_id: str) -> Tuple[str, str]:
+            return (self.target_names.get(target_id, target_id), target_id)
+
+        def _select(seed_name: Optional[str] = None) -> Dict:
+            remaining = list(candidate_items)
+            selected: List[Dict] = []
+            covered_targets: Set[str] = set()
+            covered_compounds: Set[str] = set()
+
+            def _add(item: Dict) -> None:
+                herb_name = item["中药名"]
+                target_ids = herb_targets.get(herb_name, set())
+                compound_ids = herb_compounds.get(herb_name, set())
+                new_targets = target_ids - covered_targets
+                new_compounds = compound_ids - covered_compounds
+                new_integrated = new_compounds & integrated_compound_ids
+                selected.append({
+                    "中药名": herb_name,
+                    "原始排名": rank_by_herb.get(herb_name, 0),
+                    "关联靶点数": len(target_ids),
+                    "关联化合物数": len(compound_ids),
+                    "新增靶点数": len(new_targets),
+                    "新增化合物数": len(new_compounds),
+                    "整合成分数": len(compound_ids & integrated_compound_ids),
+                    "新增整合成分数": len(new_integrated),
+                    "新增靶点": [
+                        (target_id, self.target_names.get(target_id, target_id))
+                        for target_id in sorted(new_targets, key=_target_sort_key)
+                    ],
+                })
+                covered_targets.update(target_ids)
+                covered_compounds.update(compound_ids)
+                remaining.remove(item)
+
+            if seed_name is not None:
+                seed_item = next(
+                    (item for item in remaining if item["中药名"] == seed_name),
+                    None,
+                )
+                if seed_item is not None:
+                    _add(seed_item)
+
+            while remaining and len(selected) < formula_size:
+                eligible = []
+                for item in remaining:
+                    herb_name = item["中药名"]
+                    target_gain = herb_targets.get(herb_name, set()) - covered_targets
+                    compound_gain = herb_compounds.get(herb_name, set()) - covered_compounds
+                    if selected and not target_gain:
+                        continue
+                    eligible.append((item, target_gain, compound_gain))
+
+                if not eligible:
+                    break
+
+                best_item, _, _ = max(
+                    eligible,
+                    key=lambda entry: (
+                        len(entry[1]),
+                        len(entry[2]),
+                        len(entry[2] & integrated_compound_ids),
+                        -rank_by_herb.get(entry[0]["中药名"], 10 ** 9),
+                    ),
+                )
+                _add(best_item)
+
+            coverage = len(covered_targets) / len(disease_target_ids)
+            selected_rank_sum = sum(item["原始排名"] for item in selected)
+            return {
+                "中药名列表": [item["中药名"] for item in selected],
+                "组合成员": selected,
+                "组合规模": len(selected),
+                "疾病靶点数": len(disease_target_ids),
+                "覆盖靶点数": len(covered_targets),
+                "靶点覆盖率": round(coverage, 4),
+                "覆盖靶点": [
+                    (target_id, self.target_names.get(target_id, target_id))
+                    for target_id in sorted(covered_targets, key=_target_sort_key)
+                ],
+                "组合关联化合物数": len(covered_compounds),
+                "整合成分数": len(covered_compounds & integrated_compound_ids),
+                "候选池大小": len(candidate_items),
+                "原始排名和": selected_rank_sum,
+                "停止原因": (
+                    "达到设定味数"
+                    if len(selected) >= formula_size
+                    else "候选中没有可新增覆盖的疾病靶点"
+                ),
+            }
+
+        # 主方案使用现有排序首位；其余方案从前几名分别作为种子，形成可解释备选。
+        seed_names = [item["中药名"] for item in candidate_items[:max_alternatives + 2]]
+        formulas = [_select(None)] + [_select(seed) for seed in seed_names]
+        unique_formulas: Dict[Tuple[str, ...], Dict] = {}
+        for formula in formulas:
+            key = tuple(sorted(formula["中药名列表"]))
+            if key:
+                unique_formulas.setdefault(key, formula)
+
+        results = list(unique_formulas.values())
+        results.sort(
+            key=lambda formula: (
+                formula["覆盖靶点数"],
+                formula["组合关联化合物数"],
+                formula["整合成分数"],
+                -formula["原始排名和"],
+            ),
+            reverse=True,
+        )
+        return results[:max_alternatives]
 
     # ===================== 图谱统计 =====================
 
