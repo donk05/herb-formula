@@ -8,9 +8,12 @@ _project_root = os.path.dirname(os.path.abspath(__file__))
 if _project_root not in sys.path: sys.path.insert(0, _project_root)
 
 import streamlit as st
+import streamlit.components.v1 as components
 import matplotlib.pyplot as plt
 import numpy as np
+from io import BytesIO
 import json, time, urllib.request, urllib.error, base64, sqlite3, zipfile, shutil
+import threading
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
 from src.disease_advice import get_disease_advice
@@ -293,6 +296,107 @@ div[data-baseweb="select"] > div { border-radius: 10px!important; border-color: 
   font-size: 1.15rem;
 }
 
+</style>""", unsafe_allow_html=True)
+
+# ==================== Modern AI product visual layer ====================
+# Keep the existing component class names because the rendering markup below
+# relies on them; this layer replaces the legacy green dashboard appearance.
+st.markdown("""<style>
+:root {
+  --primary: #7C3AED;
+  --primary-2: #8B5CF6;
+  --lavender: #C4B5FD;
+  --lavender-bg: #EDE9FE;
+  --ink: #111827;
+  --body: #374151;
+  --muted: #6B7280;
+}
+
+html, body, .stApp { background: #FAFAFC !important; color: var(--body); }
+.stApp::before { display:none !important; }
+[data-testid="stAppViewContainer"] { position: relative; overflow: hidden; }
+[data-testid="stAppViewContainer"]::before {
+  content: ""; position: fixed; inset: -220px 10% auto -15%; height: 520px;
+  background: radial-gradient(circle, rgba(124,58,237,.16) 0%, rgba(196,181,253,.08) 38%, transparent 72%);
+  pointer-events: none; z-index: 0;
+}
+[data-testid="stAppViewContainer"]::after {
+  content: ""; position: fixed; top: -120px; right: -120px; width: 520px; height: 520px;
+  background: radial-gradient(circle, rgba(167,139,250,.14), transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.main .block-container { max-width: 1240px; padding: 1.1rem 2rem 8rem; position: relative; z-index: 1; }
+header[data-testid="stHeader"], [data-testid="stDecoration"], [data-testid="stToolbar"], #MainMenu, footer { display: none !important; }
+h1, h2, h3, h4, h5, h6 { color: var(--ink) !important; letter-spacing: -.02em; }
+p, span, div, label { color: var(--body); }
+hr, [data-testid="stDivider"] { border: 0 !important; height: 1px !important; background: linear-gradient(90deg, transparent, #DDD6FE, transparent) !important; margin: 1.7rem 0 !important; }
+
+/* Product navigation and hero */
+.product-nav { display:flex; align-items:center; gap:1rem; padding:.5rem 0 1.3rem; }
+.brand-mark { color: var(--ink); font-size:1.18rem; font-weight:800; letter-spacing:-.03em; white-space:nowrap; }
+.brand-mark span { color: var(--primary); }
+.nav-links { display:flex; justify-content:center; gap:1.5rem; flex:1; }
+.nav-links a { color:#6B7280 !important; text-decoration:none; font-size:.88rem; transition:color .2s ease; }
+.nav-links a:hover { color:var(--primary) !important; }
+.hero-banner { position:relative; overflow:hidden; background:rgba(255,255,255,.58); border:1px solid rgba(196,181,253,.35); border-radius:32px; padding:3.8rem 2rem 2.5rem; margin:.2rem auto 1.4rem; text-align:center; box-shadow:0 18px 60px rgba(76,29,149,.08); backdrop-filter:blur(18px); }
+.hero-banner::before { content:""; position:absolute; width:340px; height:340px; top:-180px; left:8%; background:radial-gradient(circle,rgba(124,58,237,.16),transparent 70%); pointer-events:none; }
+.hero-banner::after { content:""; position:absolute; width:360px; height:360px; right:-180px; bottom:-200px; background:radial-gradient(circle,rgba(196,181,253,.3),transparent 70%); pointer-events:none; }
+.hero-kicker { position:relative; z-index:1; display:inline-flex; align-items:center; gap:6px; color:#6D28D9; background:#F5F3FF; border:1px solid #DDD6FE; padding:6px 14px; border-radius:999px; font-size:.78rem; font-weight:700; }
+.hero-title { position:relative; z-index:1; color:var(--ink) !important; font-size:clamp(2.3rem,5vw,4rem); line-height:1.1; letter-spacing:-.06em; margin:1.1rem auto .8rem; }
+.hero-title .gradient-word { background:linear-gradient(135deg,#6D28D9,#A78BFA); -webkit-background-clip:text; background-clip:text; color:transparent !important; }
+.hero-subtitle { position:relative; z-index:1; color:var(--muted) !important; max-width:680px; font-size:1rem; line-height:1.8; margin:0 auto; }
+.search-box { max-width:760px; margin:1.7rem auto .7rem; }
+.search-box [data-testid="stTextInput"] input, .search-box input, [data-testid="stTextInput"] input { border-radius:9999px !important; border:1px solid #E5E7EB !important; background:#fff !important; color:var(--ink) !important; box-shadow:0 10px 30px rgba(17,24,39,.06) !important; outline:none !important; transition:all .25s ease !important; }
+.search-box [data-testid="stTextInput"] input { padding:1rem 1.35rem !important; font-size:1.05rem !important; min-height:54px; }
+.search-box [data-testid="stTextInput"] input:hover, .search-box input:hover, [data-testid="stTextInput"] input:hover { border-color:#C4B5FD !important; }
+.search-box [data-testid="stTextInput"] input:focus, .search-box input:focus, [data-testid="stTextInput"] input:focus { border-color:var(--primary) !important; box-shadow:0 0 0 4px rgba(124,58,237,.15),0 10px 28px rgba(124,58,237,.16) !important; }
+.hot-label { color:#9CA3AF; font-size:.8rem; margin:.3rem 0 .45rem; }
+
+/* Controls, cards and metrics */
+div[data-baseweb="select"] > div, [data-testid="stSlider"] { border-radius:999px !important; }
+div[data-baseweb="select"] > div { border-color:#E5E7EB !important; background:#fff !important; box-shadow:0 5px 18px rgba(17,24,39,.04); }
+div.stButton > button, [data-testid="stFormSubmitButton"] button { border-radius:999px !important; border:1px solid #DDD6FE !important; background:#fff !important; color:#6D28D9 !important; font-weight:700 !important; box-shadow:0 5px 16px rgba(124,58,237,.06) !important; transition:all .22s ease !important; }
+div.stButton > button:hover, [data-testid="stFormSubmitButton"] button:hover { border-color:#A78BFA !important; background:#F5F3FF !important; transform:translateY(-2px); }
+div.stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button[kind="primary"] { color:#fff !important; border:0 !important; background:linear-gradient(135deg,#7C3AED,#8B5CF6) !important; box-shadow:0 9px 22px rgba(124,58,237,.25) !important; }
+div.stButton > button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button[kind="primary"]:hover { background:linear-gradient(135deg,#6D28D9,#7C3AED) !important; box-shadow:0 12px 28px rgba(124,58,237,.34) !important; }
+div[data-testid="stMetric"], .herb-card, .ai-card, details[data-testid="stExpander"] { background:#fff !important; border-radius:20px !important; border:1px solid rgba(229,231,235,.85) !important; box-shadow:0 6px 24px rgba(17,24,39,.06) !important; transition:all .25s ease; }
+div[data-testid="stMetric"] { padding:1.15rem 1.25rem; }
+div[data-testid="stMetric"]:hover, .herb-card:hover, .ai-card:hover { transform:translateY(-3px); box-shadow:0 14px 34px rgba(124,58,237,.12) !important; }
+div[data-testid="stMetric"] label { color:var(--muted) !important; }
+div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color:var(--ink) !important; font-weight:800; }
+.herb-card { border-left:5px solid var(--primary) !important; padding:1.25rem 1.35rem; }
+.herb-card .herb-name { color:#4C1D95; }
+.herb-card .herb-stats, .herb-card .herb-stats span { color:var(--muted); }
+.herb-card .herb-score { color:var(--primary); }
+.progress-bar { background:#EDE9FE; height:5px; border-radius:999px; }
+.progress-bar .fill { background:linear-gradient(90deg,#7C3AED,#A78BFA); border-radius:999px; }
+.herb-img-wrap { border-radius:18px; box-shadow:0 5px 16px rgba(76,29,149,.12); }
+.herb-img-placeholder { border-radius:18px; background:linear-gradient(135deg,#F5F3FF,#EDE9FE); border-color:#C4B5FD; }
+.evidence-chip { color:#6D28D9; background:#F5F3FF; border-color:#DDD6FE; border-radius:999px; }
+.ai-card { background:linear-gradient(135deg,#fff,#F5F3FF) !important; border-color:#EDE9FE !important; line-height:1.9; }
+.ai-badge { background:linear-gradient(135deg,#7C3AED,#A78BFA); border-radius:999px; }
+details[data-testid="stExpander"] { overflow:hidden; }
+.search-hint { background:#F5F3FF; border-color:#DDD6FE; color:#6D28D9; border-radius:16px; }
+
+/* Chat and status surfaces */
+.chat-container, .diet-header-box, .chat-search-wrap { background:rgba(255,255,255,.68); border:1px solid rgba(196,181,253,.45); box-shadow:0 12px 36px rgba(76,29,149,.08); }
+.wechat-user-bubble { background:linear-gradient(135deg,#7C3AED,#A78BFA); color:#fff; border-radius:20px 5px 20px 20px; box-shadow:0 5px 14px rgba(124,58,237,.18); }
+.wechat-user-avatar { background:#F5F3FF; border:1px solid #DDD6FE; }
+.footer-note { color:#9CA3AF; }
+::-webkit-scrollbar-track { background:#FAFAFC; }
+::-webkit-scrollbar-thumb { background:#C4B5FD; border-radius:999px; }
+
+/* Functional portal buttons and the Streamlit-backed Spotlight form. */
+div[data-testid="stButton"]:has(button[aria-label*="生活建议"]),
+div[data-testid="stButton"]:has(button[aria-label*="药膳方案"]) { height:100%; }
+div[data-testid="stButton"]:has(button[aria-label*="生活建议"]) button,
+div[data-testid="stButton"]:has(button[aria-label*="药膳方案"]) button { min-height:150px !important; white-space:pre-wrap; text-align:left; padding:24px 26px !important; border-radius:24px !important; background:linear-gradient(135deg,#FFFFFF 0%,#F5F3FF 100%) !important; color:#4C1D95 !important; border:1px solid #EDE9FE !important; box-shadow:0 10px 28px rgba(76,29,149,.08) !important; font-size:1.05rem !important; line-height:1.7 !important; }
+div[data-testid="stButton"]:has(button[aria-label*="生活建议"]) button:hover,
+div[data-testid="stButton"]:has(button[aria-label*="药膳方案"]) button:hover { transform:translateY(-8px) scale(1.02); border-color:#C4B5FD !important; box-shadow:0 20px 42px rgba(124,58,237,.22) !important; background:linear-gradient(135deg,#FFFFFF 0%,#EDE9FE 100%) !important; }
+[data-testid="stForm"]:has(input[aria-label*="食养灵感"]) { position:fixed !important; left:50% !important; bottom:40px !important; transform:translateX(-50%) !important; z-index:9999 !important; width:60% !important; min-width:280px !important; max-width:760px !important; height:62px !important; min-height:62px !important; max-height:62px !important; margin:0 !important; padding:8px 9px 8px 20px !important; overflow:hidden !important; border-radius:99px !important; background:rgba(255,255,255,.6) !important; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,.8) !important; box-shadow:0 16px 40px rgba(124,58,237,.2), inset 0 1px 0 rgba(255,255,255,.9) !important; }
+[data-testid="stForm"]:has(input[aria-label*="食养灵感"]) [data-testid="stTextInput"] input { border:0 !important; outline:0 !important; background:transparent !important; box-shadow:none !important; border-radius:99px !important; padding:11px 0 !important; }
+[data-testid="stForm"]:has(input[aria-label*="食养灵感"]) [data-testid="stFormSubmitButton"] button { width:42px !important; height:42px !important; min-height:42px !important; padding:0 !important; border:0 !important; border-radius:50% !important; color:#fff !important; background:linear-gradient(135deg,#7C3AED,#8B5CF6) !important; box-shadow:0 8px 18px rgba(124,58,237,.3) !important; }
+[data-testid="stForm"]:has(input[aria-label*="食养灵感"]) [data-testid="stFormSubmitButton"] button:hover { transform:scale(1.08) rotate(-5deg); }
 </style>""", unsafe_allow_html=True)
 
 # ==================== 数据加载 ====================
@@ -659,6 +763,42 @@ def retrieve_ancient_books(query: str, k: int = 3):
 
     return results
 
+
+def prewarm_rag_resources():
+    """在图谱结果页提前初始化 RAG 资源，避免首次提交问题时才冷启动。"""
+    # 先显式初始化 embedding 模型，再初始化三个 Chroma 实例；这些函数本身也有资源缓存。
+    _get_rag_embeddings()
+    ancient_db = load_rag_db()
+    fangji_db = _load_fangji_chroma()
+    yangsheng_db = _load_yangsheng_chroma()
+    return {
+        "ancient": ancient_db is not None,
+        "fangji": fangji_db is not None,
+        "yangsheng": yangsheng_db is not None,
+    }
+
+
+@st.cache_resource(show_spinner=False)
+def start_rag_prewarm():
+    """启动一次后台预热任务；同一 Streamlit 进程内的多个会话共享结果。"""
+    state = {"done": False, "error": None, "thread": None}
+
+    def _worker():
+        try:
+            prewarm_rag_resources()
+        except Exception as exc:
+            state["error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+        finally:
+            state["done"] = True
+
+    state["thread"] = threading.Thread(
+        target=_worker,
+        name="rag-prewarm",
+        daemon=True,
+    )
+    state["thread"].start()
+    return state
+
 # ==================== Gemini 膳食助手 API ====================
 DIET_SYSTEM_INSTRUCTION = (
     '你是一位专注于「药食同源」与「大众营养膳食」的温和科普助手。'
@@ -748,29 +888,29 @@ def generate_herb_circular_graph(herb_name, disease_name, chain_data):
 
     # --- 中心节点 ---
     nodes.append({"name": disease_name, "symbolSize": 30,
-                  "itemStyle": {"color": "#FFB74D"}})   # 橙黄 — 疾病
+                  "itemStyle": {"color": "#7C3AED"}})   # 紫色 — 疾病
     nodes.append({"name": herb_name, "symbolSize": 25,
-                  "itemStyle": {"color": "#42A5F5"}})   # 蓝色 — 中药
+                  "itemStyle": {"color": "#8B5CF6"}})   # 紫色 — 中药
 
-    # --- 化合物节点（绿色）---
+    # --- 化合物节点（浅紫）---
     for cid, cname in compounds:
         label = cname if cname and cname != cid else cid
         # 截断过长名称
         if len(label) > 18:
             label = label[:16] + "..."
         nodes.append({"name": cid, "symbolSize": 15,
-                      "itemStyle": {"color": "#66BB6A"},
+                      "itemStyle": {"color": "#A78BFA"},
                       "label": {"formatter": label}})
         # 中药 → 化合物
         links.append({"source": herb_name, "target": cid})
 
-    # --- 靶点节点（红色）---
+    # --- 靶点节点（淡紫）---
     for tid, tname in targets:
         label = tname if tname and tname != tid else tid
         if len(label) > 14:
             label = label[:12] + "..."
         nodes.append({"name": tid, "symbolSize": 12,
-                      "itemStyle": {"color": "#EF5350"},
+                      "itemStyle": {"color": "#C4B5FD"},
                       "label": {"formatter": label}})
         # 靶点 → 疾病
         links.append({"source": tid, "target": disease_name})
@@ -783,7 +923,7 @@ def generate_herb_circular_graph(herb_name, disease_name, chain_data):
     graph = (
         Graph(init_opts=opts.InitOpts(
             width="100%", height="520px",
-            bg_color="rgba(0,0,0,0)",  # 透明背景
+            bg_color="transparent",
         ))
         .add(
             series_name="",
@@ -813,12 +953,17 @@ def generate_herb_circular_graph(herb_name, disease_name, chain_data):
                 title=f"🔬 {herb_name} ↔ {disease_name} 分子机制图谱",
                 title_textstyle_opts=opts.TextStyleOpts(
                     font_size=15, font_family="Microsoft YaHei, sans-serif",
-                    color="#1B5E20",
+                    color="#4C1D95",
                 ),
                 pos_left="center",
             ),
             legend_opts=opts.LegendOpts(is_show=False),
+            tooltip_opts=opts.TooltipOpts(
+                background_color="#FFFFFF", border_color="#EDE9FE", border_width=1,
+                textstyle_opts=opts.TextStyleOpts(color="#111827"),
+            ),
         )
+        .set_colors(["#7C3AED", "#8B5CF6", "#A78BFA", "#C4B5FD", "#EDE9FE"])
     )
     return graph
 
@@ -911,67 +1056,123 @@ def ask_gemini_diet_assistant(messages, disease_context="", rag_context=""):
 
     return _diet_fallback(disease_context)
 
-# ==================== 侧边栏 ====================
-with st.sidebar:
-    st.markdown("<h3 style='margin-bottom:0;'>🌿 知识图谱检索</h3>", unsafe_allow_html=True)
-    st.caption("100 种药食同源 × 8300+ 疾病")
-    st.markdown("---")
+# ==================== 顶部导航与主搜索 ====================
+if "hero_search" not in st.session_state:
+    st.session_state.hero_search = ""
+if "pending_disease_search" in st.session_state:
+    st.session_state.hero_search = st.session_state.pop("pending_disease_search")
 
-    search_query = st.text_input(
-        "🔍 搜索疾病", placeholder="输入中文或英文疾病名...",
-        label_visibility="collapsed",
+nav_brand, nav_links, nav_action = st.columns([2.2, 5.8, 1.5], vertical_alignment="center")
+with nav_brand:
+    st.markdown('<div class="brand-mark">🌿 TCM<span>KIAgent</span></div>', unsafe_allow_html=True)
+with nav_links:
+    st.markdown(
+        '<div class="nav-links">'
+        '<a href="#knowledge-graph">知识图谱检索</a>'
+        '<a href="#literature-evidence">文献知识</a>'
+        '<a href="#ancient-books">古籍问答</a>'
+        '<a href="#health-advice">健康建议</a>'
+        '</div>', unsafe_allow_html=True,
     )
-    if search_query.strip():
-        matched = fuzzy_search(search_query.strip(), all_diseases, top_k=15)
-        default_idx = 0
-    else:
-        matched = all_diseases_default
-        default_idx = matched.index("高血压") if "高血压" in matched else 0
+with nav_action:
+    if st.button("刷新缓存", key="refresh_cache_top", use_container_width=True):
+        st.cache_resource.clear()
+        st.cache_data.clear()
+        st.rerun()
 
+st.markdown(
+    '<div class="hero-banner">'
+    '<div class="hero-kicker">✦ 网络药理学知识图谱 · 药食同源智能推荐</div>'
+    '<div class="hero-title">用 AI 读懂 <span class="gradient-word">中药与疾病</span> 的关联</div>'
+    '<div class="hero-subtitle">从疾病、靶点、化合物到中药，沿着可解释的关系链探索日常健康科普线索。</div>'
+    '</div>', unsafe_allow_html=True,
+)
+
+search_query = st.text_input(
+    "搜索疾病", placeholder="输入中文或英文疾病名，例如：高血压、糖尿病...",
+    label_visibility="collapsed", key="hero_search",
+)
+
+st.markdown('<div class="hot-label">🔥 热门搜索</div>', unsafe_allow_html=True)
+hot_diseases = ["高血压", "糖尿病", "高血脂", "失眠", "痛风", "肥胖症", "贫血", "慢性胃炎"]
+
+def _set_hot_search(disease_name):
+    """在下一次脚本重跑前更新 Hero 搜索框 widget 的值。"""
+    st.session_state.pending_disease_search = disease_name
+
+hot_cols = st.columns(len(hot_diseases))
+for hot_col, hot_disease in zip(hot_cols, hot_diseases):
+    with hot_col:
+        st.button(
+            hot_disease, key=f"hot_search_{hot_disease}", use_container_width=True,
+            on_click=_set_hot_search, args=(hot_disease,),
+        )
+
+if search_query.strip():
+    matched = fuzzy_search(search_query.strip(), all_diseases, top_k=15)
+    default_idx = 0
+else:
+    matched = all_diseases_default
+    default_idx = matched.index("高血压") if "高血压" in matched else 0
+
+control_cols = st.columns([5, 3, 2], gap="small", vertical_alignment="bottom")
+with control_cols[0]:
     if matched:
-        selected_disease = st.selectbox("匹配结果（{}条）".format(len(matched)), options=matched, index=default_idx, label_visibility="collapsed")
+        selected_disease = st.selectbox(
+            "匹配结果（{}条）".format(len(matched)), options=matched,
+            index=default_idx, label_visibility="collapsed",
+        )
     else:
         selected_disease = None
         st.markdown('<div class="search-hint">🔎 未找到匹配，试试其他关键词</div>', unsafe_allow_html=True)
+with control_cols[1]:
+    top_k = st.slider("展示 Top N", 5, 30, 15, key="top_k_control")
+with control_cols[2]:
+    generate_btn = st.button(
+        "查询知识图谱", type="primary", use_container_width=True,
+        disabled=(selected_disease is None), key="query_graph_top",
+    )
 
-    st.markdown("---")
-    top_k = st.slider("📊 展示 Top N 中药", 5, 30, 15)
-    generate_btn = st.button("🌿 查询知识图谱", type="primary", use_container_width=True, disabled=(selected_disease is None))
-
-    # 将查询参数持久化到 session_state，防止 chat_input 重跑时丢失
-    if generate_btn and selected_disease:
-        st.session_state.query_disease = selected_disease
-        st.session_state.query_top_k = top_k
-        st.session_state.query_active = True
-
-    st.markdown("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🔄 刷新缓存", use_container_width=True):
-            st.cache_resource.clear()
-            st.cache_data.clear()
-            st.rerun()
-    with c2:
-        st.caption(f"默认 {len(all_diseases_default)} 种疾病可查")
-
-# ==================== 主页面 - Hero ====================
-st.markdown(
-    '<div class="hero-banner">'
-    '<div class="hero-title">🌿 药食同源智能配方推荐</div>'
-    '<div class="hero-subtitle">基于网络药理学知识图谱，深度挖掘 中药 → 化合物 → 靶点 → 疾病 多层次关系链<br>'
-    '为 1800+ 种疾病智能匹配最优药食同源中药组合，赋能精准健康决策</div>'
-    '</div>', unsafe_allow_html=True,
-)
+# 将查询参数持久化到 session_state，防止 AI 问答重跑时丢失
+if generate_btn and selected_disease:
+    if st.session_state.get("query_disease") != selected_disease:
+        for transient_key in (
+            "portal_lifestyle_result",
+            "spotlight_response",
+            "spotlight_query",
+            "spotlight_prefill",
+        ):
+            st.session_state.pop(transient_key, None)
+        st.session_state.diet_messages = []
+        st.session_state.diet_rag_docs = []
+    st.session_state.query_disease = selected_disease
+    st.session_state.query_top_k = top_k
+    st.session_state.query_active = True
 
 # 初始化查询持久化状态
 if "query_active" not in st.session_state:
     st.session_state.query_active = False
 
 if not st.session_state.query_active:
-    if selected_disease is None:
-        st.info("👈 请在左侧搜索并选择一种疾病，然后点击「🌿 查询知识图谱」按钮")
-    else:
-        st.info("👈 请点击「🌿 查询知识图谱」按钮开始分析")
+    st.markdown('<div id="knowledge-graph"></div>', unsafe_allow_html=True)
+    st.markdown("### 从一个问题开始探索")
+    st.caption("选择疾病后，系统会沿着真实数据中的中药、化合物和靶点关系生成可解释的检索结果。")
+    empty_cols = st.columns(3, gap="large")
+    empty_cards = [
+        ("🧬", "知识图谱检索", "查看疾病关联靶点、化合物和药食同源中药的证据链。"),
+        ("📚", "文献证据", "在中药卡片中查看 PubMed 与知网文献摘要和原文入口。"),
+        ("📜", "古籍 RAG 问答", "结合古籍、方剂与养生知识库，获得日常膳食科普建议。"),
+    ]
+    for card_col, (icon, title, desc) in zip(empty_cols, empty_cards):
+        with card_col:
+            st.markdown(
+                f'<div class="ai-card" style="min-height:145px">'
+                f'<div style="font-size:1.6rem;margin-bottom:.45rem">{icon}</div>'
+                f'<strong style="color:#4C1D95;font-size:1.05rem">{title}</strong>'
+                f'<div style="color:#6B7280;font-size:.9rem;line-height:1.7;margin-top:.45rem">{desc}</div>'
+                '</div>', unsafe_allow_html=True,
+            )
+    st.info("选择一个疾病并点击「查询知识图谱」，开始查看结果。")
     st.stop()
 
 # 从 session_state 取持久化的查询参数（chat_input 重跑时不会丢失）
@@ -990,7 +1191,8 @@ if not ranked:
 en_name = loader.cn_to_en.get(selected_disease) or CN_TO_EN_DISEASE.get(selected_disease, selected_disease)
 max_targets = ranked[0]["关联靶点数"]
 
-# ==================== KPI 卡片（彩色顶线） ====================
+# ==================== KPI 卡片 ====================
+st.markdown('<div id="knowledge-graph"></div>', unsafe_allow_html=True)
 st.markdown("### 📊 图谱检索概览")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("🔬 关联靶点", f"{stats['关联靶点数']} 个")
@@ -1005,19 +1207,22 @@ st.caption(f"按靶点覆盖度排序，共 {stats['相关中药数']} 种药食
 # 在中药卡片渲染前确保文献库已下载，避免卡片查询缓存到空结果
 _ensure_literature_db()
 
+# 进入结果页后在后台预热向量模型与三个知识库，避免用户首次提交问题时才冷启动。
+rag_prewarm_state = start_rag_prewarm()
+
 left_col, right_col = st.columns([5, 4], gap="large")
 
 with left_col:
     for i, herb in enumerate(ranked):
         # 奖牌颜色
         if i == 0:
-            medal_c, rank_bg, border_c = "🥇", "linear-gradient(135deg, #FFF8E1, #FFF3E0)", "#FF8F00"
+            medal_c, rank_bg, border_c = "🥇", "linear-gradient(135deg, #FFFFFF, #F5F3FF)", "#7C3AED"
         elif i == 1:
-            medal_c, rank_bg, border_c = "🥈", "linear-gradient(135deg, #FAFAFA, #F5F5F5)", "#9E9E9E"
+            medal_c, rank_bg, border_c = "🥈", "linear-gradient(135deg, #FFFFFF, #FAFAFF)", "#A78BFA"
         elif i == 2:
-            medal_c, rank_bg, border_c = "🥉", "linear-gradient(135deg, #FFF3E0, #FBE9E7)", "#BF360C"
+            medal_c, rank_bg, border_c = "🥉", "linear-gradient(135deg, #FFFFFF, #F8F7FF)", "#C4B5FD"
         else:
-            medal_c, rank_bg, border_c = f"<span style='color:#999;font-size:1.1rem'>{i+1}</span>", "#FFFFFF", "#E0E0E0"
+            medal_c, rank_bg, border_c = f"<span style='color:#6B7280;font-size:1.1rem'>{i+1}</span>", "#FFFFFF", "#EDE9FE"
 
         pct = round(herb["关联靶点数"] / max_targets * 100) if max_targets else 0
         evi_chips = "".join(f'<span class="evidence-chip">{t}</span>' for t, c in herb["证据链"][:4])
@@ -1057,6 +1262,7 @@ with left_col:
                 st.caption("该中药暂无分子层面关联数据")
 
         # 文献知识 Expander
+        st.markdown('<div id="literature-evidence"></div>', unsafe_allow_html=True)
         herb_name = herb["中药名"]
         has_lit = has_literature(herb_name, selected_disease)
         expander_title = (
@@ -1073,10 +1279,10 @@ with left_col:
                     title = paper.get("title") or "无标题"
                     src = paper.get("source") or ""
                     if src == "CNKI":
-                        src_badge = ('<span style="font-size:0.75rem;color:#fff;background:#E65100;'
+                        src_badge = ('<span style="font-size:0.75rem;color:#5B21B6;background:#EDE9FE;'
                                      'padding:2px 8px;border-radius:10px;margin-left:6px;">知网</span>')
                     elif src == "PubMed":
-                        src_badge = ('<span style="font-size:0.75rem;color:#fff;background:#1565C0;'
+                        src_badge = ('<span style="font-size:0.75rem;color:#6D28D9;background:#F5F3FF;'
                                      'padding:2px 8px;border-radius:10px;margin-left:6px;">PubMed</span>')
                     else:
                         src_badge = ""
@@ -1091,8 +1297,8 @@ with left_col:
                     if abstract:
                         escaped = abstract.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         st.markdown(
-                            f'<div style="font-size:0.88rem;color:#666;line-height:1.7;'
-                            f'white-space:pre-wrap;border-left:3px solid #C8E6C9;'
+                            f'<div style="font-size:0.88rem;color:#6B7280;line-height:1.7;'
+                            f'white-space:pre-wrap;border-left:3px solid #C4B5FD;'
                             f'padding-left:12px;margin:8px 0;">{escaped}</div>',
                             unsafe_allow_html=True,
                         )
@@ -1106,27 +1312,29 @@ with left_col:
                 )
 
 with right_col:
-    # 饼图：Top 8 中药占比
-    st.markdown("#### 🍩 Top 8 靶点覆盖分布")
+    # 将服务端 Matplotlib 图表转成 Base64，交给自定义前端 Tabs 切换。
     top8 = ranked[:8]
     labels = [h["中药名"] for h in top8]
     values = [h["关联靶点数"] for h in top8]
-    palette = ["#2E7D32", "#43A047", "#66BB6A", "#81C784", "#A5D6A7", "#C8E6C9", "#FFB74D", "#FF9800"]
+    palette = ["#7C3AED", "#8B5CF6", "#A78BFA", "#C4B5FD", "#DDD6FE", "#EDE9FE", "#F5F3FF", "#E9D5FF"]
 
     fig1, ax1 = plt.subplots(figsize=(4.2, 4.2))
     fig1.patch.set_facecolor("none"); ax1.set_facecolor("none")
     wedges, texts, autotexts = ax1.pie(
         values, labels=None, autopct="%1.1f%%", colors=palette[:len(labels)],
         startangle=140, pctdistance=0.78,
-        wedgeprops={"edgecolor": "white", "linewidth": 2, "antialiased": True},
+        wedgeprops={"width": 0.38, "edgecolor": "white", "linewidth": 2, "antialiased": True},
     )
-    for at in autotexts: at.set_fontsize(9); at.set_fontweight("bold"); at.set_color("#333")
-    ax1.legend(wedges, labels, title="中药名", loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9)
-    ax1.set_title("靶点覆盖度分布", fontsize=12, fontweight="bold", color="#1B5E20", pad=12)
-    st.pyplot(fig1)
+    for at in autotexts: at.set_fontsize(9); at.set_fontweight("bold"); at.set_color("#6B7280")
+    ax1.legend(wedges, labels, title="中药名", loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9, frameon=False)
+    ax1.set_title("靶点覆盖度分布", fontsize=12, fontweight="bold", color="#4C1D95", pad=12)
+    ax1.tick_params(colors="#6B7280")
+    donut_buffer = BytesIO()
+    fig1.savefig(donut_buffer, format="png", dpi=150, transparent=True, bbox_inches="tight")
+    donut_b64 = base64.b64encode(donut_buffer.getvalue()).decode("ascii")
+    plt.close(fig1)
 
     # 柱状图：Top 10
-    st.markdown("#### 📊 Top 10 关联强度")
     top10 = ranked[:10]
     names = [h["中药名"] for h in reversed(top10)]
     tv = [h["关联靶点数"] for h in reversed(top10)]
@@ -1135,214 +1343,184 @@ with right_col:
     fig2, ax2 = plt.subplots(figsize=(4.5, 4.2))
     fig2.patch.set_facecolor("none"); ax2.set_facecolor("none")
     y = range(len(names))
-    ax2.barh([yi + 0.2 for yi in y], tv, 0.38, color="#2E7D32", alpha=0.9, label="靶点数", edgecolor="white", linewidth=0.5)
-    ax2.barh([yi - 0.2 for yi in y], cv, 0.38, color="#A5D6A7", alpha=0.85, label="化合物数", edgecolor="white", linewidth=0.5)
+    ax2.barh([yi + 0.2 for yi in y], tv, 0.38, color="#7C3AED", alpha=0.9, label="靶点数", edgecolor="white", linewidth=0.5)
+    ax2.barh([yi - 0.2 for yi in y], cv, 0.38, color="#C4B5FD", alpha=0.95, label="化合物数", edgecolor="white", linewidth=0.5)
     ax2.set_yticks(y); ax2.set_yticklabels(names, fontsize=9)
-    ax2.legend(loc="lower right", fontsize=8, framealpha=0.8)
-    ax2.set_xlabel("数量", fontsize=9, color="#777")
+    ax2.tick_params(axis="both", colors="#6B7280")
+    ax2.legend(loc="lower right", fontsize=8, framealpha=0.8, facecolor="white", edgecolor="#EDE9FE")
+    ax2.set_xlabel("数量", fontsize=9, color="#6B7280")
     ax2.spines["top"].set_visible(False); ax2.spines["right"].set_visible(False)
-    ax2.grid(axis="x", alpha=0.15, color="#999")
-    st.pyplot(fig2)
+    ax2.grid(axis="x", alpha=0.9, color="#E5E7EB", linestyle="--")
+    ax2.set_axisbelow(True)
+    for spine in ("top", "right"):
+        ax2.spines[spine].set_visible(False)
+    bar_buffer = BytesIO()
+    fig2.savefig(bar_buffer, format="png", dpi=150, transparent=True, bbox_inches="tight")
+    bar_b64 = base64.b64encode(bar_buffer.getvalue()).decode("ascii")
+    plt.close(fig2)
 
-# ==================== AI 健康建议 ====================
+    chart_tabs_html = f"""
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8"><style>
+      * {{ box-sizing: border-box; }}
+      html, body {{ margin:0; padding:0; background:transparent; font-family:Inter,Arial,'Microsoft YaHei',sans-serif; }}
+      .chart-shell {{ background:rgba(255,255,255,.72); border:1px solid #EDE9FE; border-radius:24px; padding:16px; box-shadow:0 12px 30px rgba(76,29,149,.08); }}
+      .segment {{ display:flex; gap:4px; padding:4px; background:#F5F3FF; border:1px solid #EDE9FE; border-radius:999px; }}
+      .segment button {{ flex:1; border:0; border-radius:999px; padding:10px 12px; background:transparent; color:#6B7280; cursor:pointer; font-size:13px; font-weight:700; transition:all .3s ease; }}
+      .segment button:hover {{ color:#6D28D9; }}
+      .segment button.active {{ background:#7C3AED; color:#fff; box-shadow:0 6px 16px rgba(124,58,237,.22); }}
+      .chart-panel {{ display:none; min-height:430px; padding:10px 2px 0; align-items:center; justify-content:center; animation:fadeIn .3s ease; }}
+      .chart-panel.active {{ display:flex; }}
+      .chart-panel img {{ display:block; width:100%; height:420px; object-fit:contain; }}
+      .chart-caption {{ text-align:center; color:#6B7280; font-size:12px; margin-top:2px; }}
+      @keyframes fadeIn {{ from {{ opacity:0; transform:translateY(4px); }} to {{ opacity:1; transform:translateY(0); }} }}
+    </style></head><body>
+      <div class="chart-shell">
+        <div class="segment" role="tablist" aria-label="图表切换">
+          <button class="active" data-tab="donut" role="tab">🍩 靶点覆盖分布</button>
+          <button data-tab="bar" role="tab">📊 关联强度排行</button>
+        </div>
+        <div class="chart-panel active" id="panel-donut" role="tabpanel">
+          <img src="data:image/png;base64,{donut_b64}" alt="靶点覆盖分布环形图">
+        </div>
+        <div class="chart-panel" id="panel-bar" role="tabpanel">
+          <img src="data:image/png;base64,{bar_b64}" alt="Top 10 关联强度条形图">
+        </div>
+        <div class="chart-caption">基于当前疾病的知识图谱关联计数，仅作科普参考</div>
+      </div>
+      <script>
+        (() => {{
+          const buttons = document.querySelectorAll('[data-tab]');
+          const panels = document.querySelectorAll('.chart-panel');
+          buttons.forEach((button) => button.addEventListener('click', () => {{
+            const tab = button.dataset.tab;
+            buttons.forEach((item) => item.classList.toggle('active', item === button));
+            panels.forEach((panel) => panel.classList.toggle('active', panel.id === `panel-${{tab}}`));
+          }}));
+        }})();
+      </script>
+    </body></html>
+    """
+    components.html(chart_tabs_html, height=520, scrolling=False)
+
+# ==================== 建议区：Cute Portals ====================
 st.markdown("---")
-st.markdown("### 🤖 AI 智能健康建议")
-st.caption("内置知识库 + Groq 免费 AI 实时生成，覆盖 1800+ 种疾病")
+st.markdown('<div id="health-advice"></div><div id="ancient-books"></div>', unsafe_allow_html=True)
 
-graph_ctx = ""
-if stats and ranked:
-    herbs_top = ranked[:5]
-    graph_ctx = (
-        f"知识图谱数据：该疾病关联 {stats['关联靶点数']} 个蛋白质靶点、"
-        f"{stats['关联化合物数']} 种活性化合物，涉及 {stats['相关中药数']} 种药食同源中药。"
-        f"图谱推荐前五：{'、'.join(h['中药名'] for h in herbs_top)}。"
-    )
-
-advice = get_disease_advice(selected_disease, graph_ctx)
-if advice:
-    if "AI建议" in advice:
-        st.markdown(f'<div class="ai-card"><span class="ai-badge">🤖 {advice.get("来源", "AI")}</span><br>{advice["AI建议"]}</div>', unsafe_allow_html=True)
-    else:
-        if "概述" in advice:
-            st.markdown(f'<div class="ai-card" style="margin-bottom:1rem"><b>📖 {advice["概述"]}</b></div>', unsafe_allow_html=True)
-        ca, cb = st.columns(2)
-        with ca:
-            st.markdown("#### ⚠️ 注意事项")
-            for item in advice.get("注意事项", []):
-                st.markdown(f'<div style="background:#FFF8F0;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.4rem;font-size:0.9rem;color:#555;border:1.5px solid #F0E0D0;">⚠️ {item}</div>', unsafe_allow_html=True)
-        with cb:
-            st.markdown("#### 🥗 推荐饮食")
-            for item in advice.get("推荐饮食", []):
-                st.markdown(f'<div style="background:#F0F8F0;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.4rem;font-size:0.9rem;color:#555;border:1.5px solid #D0E8D0;">🥬 {item}</div>', unsafe_allow_html=True)
-        if advice.get("生活建议"):
-            st.markdown("#### 🏃 生活建议")
-            for i, item in enumerate(advice["生活建议"]):
-                st.markdown(f'<div style="background:#F5F0FA;border-radius:10px;padding:0.6rem 0.9rem;margin-bottom:0.3rem;font-size:0.88rem;color:#555;border:1.5px solid #E0D5F0;display:inline-block;margin-right:8px;">💡 {item}</div>', unsafe_allow_html=True)
-else:
-    st.info("该疾病暂无健康建议数据。Groq AI 密钥未配置或调用失败。")
-
-# ==================== 药食同源 · AI 健康膳食助手 ====================
-st.markdown("---")
-
-# 初始化聊天历史
+# 保留既有会话键，避免刷新页面时丢失对话上下文；RAG 只在用户主动提交问题时触发。
 if "diet_messages" not in st.session_state:
     st.session_state.diet_messages = []
+if "diet_rag_docs" not in st.session_state:
+    st.session_state.diet_rag_docs = []
 
-st.markdown("### 🍽️ 亚健康调理建议")
-st.caption("基于知识图谱 + AI 大模型，为您提供个性化的药食同源膳食方案")
+# ==================== 项目功能入口：生活建议 / 药膳问答 ====================
 
-# RAG 状态指示器
-_rag_db_instance = load_rag_db()
-_rag_loaded = _rag_db_instance is not None
-if _rag_loaded:
-    try:
-        _rag_count = _rag_db_instance._collection.count()
-    except Exception:
-        _rag_count = -1
-    st.markdown(
-        f'<span style="font-size:0.82rem;color:#2E7D32;background:#E8F5E9;'
-        f'padding:3px 10px;border-radius:12px;">📚 古籍知识库已就绪'
-        f'（{_rag_count} 条）</span>',
-        unsafe_allow_html=True,
-    )
-else:
-    st.markdown(
-        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
-        'padding:3px 10px;border-radius:12px;">📚 古籍知识库未加载（纯 AI 模式）</span>',
-        unsafe_allow_html=True,
-    )
-    if _RAG_ERROR_MSG:
-        st.error(_RAG_ERROR_MSG)
+graph_context = (
+    f"当前疾病为「{selected_disease}」（英文名：{en_name}）。"
+    f"知识图谱统计：关联靶点 {stats['关联靶点数']} 个、"
+    f"关联化合物 {stats['关联化合物数']} 个、相关中药 {stats['相关中药数']} 种。"
+    f"当前推荐中药包括：{'、'.join(item['中药名'] for item in ranked[:5])}。"
+)
 
-# 方剂库状态指示器
-_fangji_db_instance = _load_fangji_chroma()
-if _fangji_db_instance is not None:
-    try:
-        _fangji_count = _fangji_db_instance._collection.count()
-    except Exception:
-        _fangji_count = -1
-    st.markdown(
-        f'<span style="font-size:0.82rem;color:#6A1B9A;background:#F3E5F5;'
-        f'padding:3px 10px;border-radius:12px;margin-left:6px;">📜 方剂库已就绪'
-        f'（{_fangji_count} 条）</span>',
-        unsafe_allow_html=True,
+portal_lifestyle_clicked = False
+portal_diet_clicked = False
+portal_left, portal_right = st.columns(2, gap="large")
+with portal_left:
+    portal_lifestyle_clicked = st.button(
+        "🧘‍♀️  开启 AI 生活建议\n\n结合当前疾病与图谱结果，查看日常作息、饮食和注意事项",
+        key="portal_lifestyle",
+        use_container_width=True,
     )
-else:
-    st.markdown(
-        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
-        'padding:3px 10px;border-radius:12px;margin-left:6px;">📜 方剂库未加载</span>',
-        unsafe_allow_html=True,
+with portal_right:
+    portal_diet_clicked = st.button(
+        "🍵  获取专属药膳方案\n\n结合古籍、方剂与养生知识库，向食养助手提问",
+        key="portal_diet",
+        use_container_width=True,
     )
 
-# 养生库状态指示器
-_yangsheng_db_instance = _load_yangsheng_chroma()
-if _yangsheng_db_instance is not None:
-    try:
-        _yangsheng_count = _yangsheng_db_instance._collection.count()
-    except Exception:
-        _yangsheng_count = -1
-    st.markdown(
-        f'<span style="font-size:0.82rem;color:#00695C;background:#E0F2F1;'
-        f'padding:3px 10px;border-radius:12px;margin-left:6px;">🧘 养生库已就绪'
-        f'（{_yangsheng_count} 条）</span>',
-        unsafe_allow_html=True,
-    )
-else:
-    st.markdown(
-        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
-        'padding:3px 10px;border-radius:12px;margin-left:6px;">🧘 养生库未加载</span>',
-        unsafe_allow_html=True,
-    )
+if portal_lifestyle_clicked:
+    with st.spinner("正在结合疾病知识库与图谱结果整理建议…"):
+        advice = get_disease_advice(selected_disease, graph_context)
+    st.session_state.portal_lifestyle_result = advice or {
+        "来源": "暂不可用",
+        "AI建议": "当前未获取到生活建议，请稍后重试。",
+    }
 
-# 文献库状态指示器
-_lit_ok = _ensure_literature_db()
-if _lit_ok:
-    st.markdown(
-        '<span style="font-size:0.82rem;color:#1565C0;background:#E3F2FD;'
-        'padding:3px 10px;border-radius:12px;margin-left:6px;">📄 文献库已就绪</span>',
-        unsafe_allow_html=True,
+if portal_diet_clicked:
+    st.session_state.spotlight_prefill = (
+        f"请结合「{selected_disease}」和当前知识图谱推荐，给我一份日常药膳方案"
     )
-else:
-    st.markdown(
-        '<span style="font-size:0.82rem;color:#888;background:#F5F5F5;'
-        'padding:3px 10px;border-radius:12px;margin-left:6px;">📄 文献库未加载</span>',
-        unsafe_allow_html=True,
-    )
+    st.session_state.portal_action = "diet"
 
-st.markdown('<div class="search-box">', unsafe_allow_html=True)
-with st.form("diet_chat_form", clear_on_submit=True, border=False):
-    cols = st.columns([10, 2], gap="small")
-    with cols[0]:
-        user_input = st.text_input(
-            "输入",
-            placeholder="💬 询问关于该亚健康状态的日常膳食调理建议...",
+if st.session_state.get("portal_lifestyle_result"):
+    advice = st.session_state.portal_lifestyle_result
+    with st.expander(f"✨ {selected_disease} 的 AI 生活建议 · {advice.get('来源', '项目知识库')}", expanded=True):
+        if advice.get("AI建议"):
+            st.markdown(advice["AI建议"])
+        else:
+            st.markdown(f"**{advice.get('概述', '结合当前查询结果，为你整理以下日常科普建议。')}**")
+            advice_col, diet_col = st.columns(2, gap="large")
+            with advice_col:
+                st.markdown("**生活节奏**")
+                for item in advice.get("生活建议", [])[:3]:
+                    st.markdown(f"- {item}")
+            with diet_col:
+                st.markdown("**饮食参考**")
+                for item in advice.get("推荐饮食", [])[:3]:
+                    st.markdown(f"- {item}")
+            precautions = advice.get("注意事项", [])[:2]
+            if precautions:
+                st.markdown("**需要留意**：" + "；".join(precautions))
+        st.caption("本内容仅为日常膳食与生活科普，不作为临床医疗诊断依据；如有不适请及时就医。")
+
+# ==================== Spotlight 对话入口（接入现有三库 RAG + DeepSeek） ====================
+
+if "spotlight_query" not in st.session_state:
+    st.session_state.spotlight_query = ""
+if "spotlight_prefill" in st.session_state:
+    st.session_state.spotlight_query = st.session_state.pop("spotlight_prefill")
+
+with st.form("spotlight_form", clear_on_submit=True, border=False):
+    spotlight_input_col, spotlight_send_col = st.columns([12, 1], vertical_alignment="center")
+    with spotlight_input_col:
+        spotlight_query = st.text_input(
+            "食养灵感",
+            placeholder="输入一个问题，探索你的食养灵感…",
             label_visibility="collapsed",
-            key="diet_chat_input",
+            key="spotlight_query",
         )
-    with cols[1]:
-        submitted = st.form_submit_button("🔍 搜索", use_container_width=True, type="primary")
-st.markdown('</div>', unsafe_allow_html=True)
+    with spotlight_send_col:
+        spotlight_submitted = st.form_submit_button("➤", type="primary", use_container_width=True)
 
-if submitted and user_input.strip():
-    prompt = user_input.strip()
-    st.session_state.diet_messages.append({"role": "user", "content": prompt})
-    with st.spinner("🌿 AI 正在检索古籍并生成膳食建议..."):
-        # RAG 检索古籍
-        rag_docs = retrieve_ancient_books(prompt, k=3)
+if spotlight_submitted and spotlight_query.strip():
+    user_query = spotlight_query.strip()
+    st.session_state.diet_messages.append({"role": "user", "content": user_query})
+    rag_thread = rag_prewarm_state.get("thread")
+    if rag_thread is not None and rag_thread.is_alive():
+        with st.spinner("📚 正在完成食养知识库首次准备…"):
+            rag_thread.join()
+    with st.spinner("正在检索古籍、方剂与养生知识库…"):
+        rag_docs = retrieve_ancient_books(user_query, k=3)
         st.session_state.diet_rag_docs = rag_docs
-
-        # 构建古籍上下文
-        rag_context = ""
-        if rag_docs:
-            lines = []
-            for i, doc in enumerate(rag_docs, 1):
-                lines.append(f"【古籍 {i}】《{doc['book_name']}》记载：{doc['content']}")
-            rag_context = "\n\n".join(lines)
-
-        herbs_top = ranked[:5] if ranked else []
-        disease_ctx = (
-            f"当前查询疾病：「{selected_disease}」\n"
-            f"知识图谱：{stats['关联靶点数']} 个蛋白质靶点、{stats['关联化合物数']} 种化合物、{stats['相关中药数']} 种药食同源中药。\n"
-            f"图谱 Top 5 推荐：{'、'.join(h['中药名'] for h in herbs_top)}。"
-        ) if stats and ranked else f"当前查询疾病：「{selected_disease}」"
+        rag_context = "\n\n".join(
+            f"【{doc.get('book_name', '知识库')}】{doc.get('content', '')}"
+            for doc in rag_docs
+        )
         response = ask_gemini_diet_assistant(
-            st.session_state.diet_messages, disease_ctx, rag_context=rag_context,
+            st.session_state.diet_messages,
+            disease_context=graph_context,
+            rag_context=rag_context,
         )
     st.session_state.diet_messages.append({"role": "assistant", "content": response})
-    st.rerun()
+    st.session_state.spotlight_response = response
 
-# 显示完整对话记录
-if st.session_state.diet_messages:
-    st.markdown("---")
-    st.markdown("### 💬 对话记录")
-    for msg in st.session_state.diet_messages:
-        if msg["role"] == "user":
-            # 微信风格：右对齐，绿色气泡，头像在右侧
-            safe_content = msg["content"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            st.markdown(
-                f'<div class="wechat-user-row">'
-                f'<div class="wechat-user-bubble">{safe_content}</div>'
-                f'<div class="wechat-user-avatar">🧑</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            with st.chat_message("assistant", avatar="🌿"):
-                st.markdown(msg["content"])
-
-# 古籍原文依据面板
-if "diet_rag_docs" in st.session_state:
-    rag_docs = st.session_state.diet_rag_docs
-    if rag_docs:
-        with st.expander("📜 查看 AI 引用的古籍原文依据", expanded=False):
-            for i, doc in enumerate(rag_docs, 1):
-                st.markdown(f"**📖 《{doc['book_name']}》**")
-                st.info(doc["content"])
-                if i < len(rag_docs):
-                    st.divider()
-    elif load_rag_db() is not None:
-        # RAG 已加载但当前问题没检索到匹配古籍
-        st.info("💡 本次问题未在古籍库中找到直接匹配的原文，AI 依据自身知识作答。")
+if st.session_state.get("spotlight_response"):
+    with st.expander("✨ Spotlight 最近回复", expanded=True):
+        st.markdown(st.session_state.spotlight_response)
+        if st.session_state.diet_rag_docs:
+            st.markdown(f"**📚 本次参考了 {len(st.session_state.diet_rag_docs)} 条知识库片段**")
+            for doc in st.session_state.diet_rag_docs:
+                st.caption(f"{doc.get('book_name', '知识库')}：{doc.get('content', '')[:280]}…")
 
 # ==================== 页脚 ====================
 st.markdown("---")
