@@ -737,7 +737,7 @@ def retrieve_ancient_books(query: str, k: int = 3):
         "source": doc.metadata.get("source", "ancient_book"),
         "question_id": doc.metadata.get("question_id"),
                 }
-                ）
+            )
         except Exception as e:
             _RAG_ERROR_MSG = f"❌ 古籍检索失败: {type(e).__name__} - {str(e)[:200]}"
 
