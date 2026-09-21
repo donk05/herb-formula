@@ -730,7 +730,7 @@ def retrieve_ancient_books(query: str, k: int = 3):
     if db is not None:
         try:
             docs = db.similarity_search(query, k=k)
-             results.extend(
+            results.extend(
                 {
         "content": doc.page_content,
         "book_name": doc.metadata.get("book_name", "佚名"),
