@@ -11,4 +11,18 @@ output/
 .streamlit/secrets.toml
 data/literature.db
 data/chroma_db/
+data/chroma_db_fangji/
+data/chroma_db_yangsheng/
+data/_graph_cache.pkl
 data/*.zip
+
+# QA RAG build temp files
+.qa_*
+.s7.*
+.st_*
+.gpu_*
+.trigger_rag_sync*
+.verify_*
+*.pid
+*.log
+nul
