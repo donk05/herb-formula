@@ -730,10 +730,13 @@ def retrieve_ancient_books(query: str, k: int = 3):
     if db is not None:
         try:
             docs = db.similarity_search(query, k=k)
-            results.extend(
-                {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
-                for doc in docs
-            )
+             results.extend(
+                {
+        "content": doc.page_content,
+        "book_name": doc.metadata.get("book_name", "佚名"),
+        "source": doc.metadata.get("source", "ancient_book"),
+        "question_id": doc.metadata.get("question_id"),
+                }
         except Exception as e:
             _RAG_ERROR_MSG = f"❌ 古籍检索失败: {type(e).__name__} - {str(e)[:200]}"
 
@@ -743,9 +746,13 @@ def retrieve_ancient_books(query: str, k: int = 3):
         try:
             docs = fdb.similarity_search(query, k=k)
             results.extend(
-                {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
+    {
+        "content": doc.page_content,
+        "book_name": doc.metadata.get("book_name", "佚名"),
+        "source": "fangji",
+    }
                 for doc in docs
-            )
+)
         except Exception as e:
             _RAG_ERROR_MSG = f"❌ 方剂检索失败: {type(e).__name__} - {str(e)[:200]}"
 
@@ -755,9 +762,13 @@ def retrieve_ancient_books(query: str, k: int = 3):
         try:
             docs = ydb.similarity_search(query, k=k)
             results.extend(
-                {"content": doc.page_content, "book_name": doc.metadata.get("book_name", "佚名")}
+    {
+        "content": doc.page_content,
+        "book_name": doc.metadata.get("book_name", "佚名"),
+        "source": "yangsheng",
+    }
                 for doc in docs
-            )
+)
         except Exception as e:
             _RAG_ERROR_MSG = f"❌ 养生库检索失败: {type(e).__name__} - {str(e)[:200]}"
 
@@ -1572,10 +1583,16 @@ if spotlight_submitted and spotlight_query.strip():
     with st.spinner("正在检索古籍、方剂与养生知识库…"):
         rag_docs = retrieve_ancient_books(user_query, k=3)
         st.session_state.diet_rag_docs = rag_docs
+        def format_rag_doc(doc):
+            if doc.get("source") == "qa":
+                return f"【问答知识库参考资料】\n{doc.get('content', '')}"
+            return f"【{doc.get('book_name', '知识库')}】{doc.get('content', '')}"
+
+
         rag_context = "\n\n".join(
-            f"【{doc.get('book_name', '知识库')}】{doc.get('content', '')}"
+            format_rag_doc(doc)
             for doc in rag_docs
-        )
+)
         response = ask_gemini_diet_assistant(
             st.session_state.diet_messages,
             disease_context=graph_context,
@@ -1590,7 +1607,10 @@ if st.session_state.get("spotlight_response"):
         if st.session_state.diet_rag_docs:
             st.markdown(f"**📚 本次参考了 {len(st.session_state.diet_rag_docs)} 条知识库片段**")
             for doc in st.session_state.diet_rag_docs:
-                st.caption(f"{doc.get('book_name', '知识库')}：{doc.get('content', '')[:280]}…")
+                if doc.get("source") == "qa":
+                    st.caption(f"问答知识库：{doc.get('content', '')[:280]}…")
+                else:
+                    st.caption(f"{doc.get('book_name', '知识库')}：{doc.get('content', '')[:280]}…")
 
 # ==================== 页脚 ====================
 st.markdown("---")
