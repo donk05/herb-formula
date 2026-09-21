@@ -1000,7 +1000,9 @@ def ask_gemini_diet_assistant(messages, disease_context="", rag_context=""):
             "\n\n你是一位精通传统中医和现代健康的调理专家。请严格结合以下古籍原典，"
             "用通俗易懂的白话文回答用户的亚健康调理问题。如果古籍中未提及，"
             "请基于你自己的中医知识库进行补充，但要说明。\n\n"
-            "【检索到的古籍记载】：\n" + rag_context
+            "【检索到的古籍记载】：\n" + rag_context +
+            "\n\n其中标记为【问答知识库参考资料】的内容为检索到的网络问答参考资料（非古籍原典），"
+            "仅供审慎参考；如与古籍记载冲突，请以古籍原典与专业知识为准。"
         )
     if disease_context:
         system_instruction += f"\n\n{disease_context}"
