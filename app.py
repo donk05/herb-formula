@@ -1064,7 +1064,7 @@ if "pending_disease_search" in st.session_state:
 
 nav_brand, nav_links, nav_action = st.columns([2.2, 5.8, 1.5], vertical_alignment="center")
 with nav_brand:
-    st.markdown('<div class="brand-mark">🌿 TCM<span>KIAgent</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-mark">🌿 Drink <span>AI</span></div>', unsafe_allow_html=True)
 with nav_links:
     st.markdown(
         '<div class="nav-links">'
@@ -1083,8 +1083,8 @@ with nav_action:
 st.markdown(
     '<div class="hero-banner">'
     '<div class="hero-kicker">✦ 网络药理学知识图谱 · 药食同源智能推荐</div>'
-    '<div class="hero-title">用 AI 读懂 <span class="gradient-word">中药与疾病</span> 的关联</div>'
-    '<div class="hero-subtitle">从疾病、靶点、化合物到中药，沿着可解释的关系链探索日常健康科普线索。</div>'
+    '<div class="hero-title"><span class="gradient-word">慧饮</span></div>'
+    '<div class="hero-subtitle">智慧组方，饮养未来</div>'
     '</div>', unsafe_allow_html=True,
 )
 
