@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="cupGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="leafGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22C55E"/>
+      <stop offset="0.55" stop-color="#4ADE80"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="waterGradient" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(-16 32)">
+    <path d="M567 382 L619 255 C631 225 643 190 657 170 C661 163 668 158 677 155 L746 136 C760 132 773 141 777 155 C782 170 773 182 759 186 L694 205 L640 383 Z" fill="url(#cupGradient)"/>
+    <path d="M278 339 C267 303 299 275 353 257 C415 236 495 229 568 235 C631 240 688 251 724 274 C751 291 763 311 756 337 L739 379 L296 379 Z M319 331 C326 305 366 288 419 279 C478 269 554 269 610 278 C661 286 702 301 718 320 C724 328 716 339 699 347 C655 367 600 374 540 376 C468 379 392 369 348 354 C327 347 315 339 319 331 Z" fill="url(#cupGradient)" fill-rule="evenodd"/>
+    <path d="M279 335 C317 360 378 375 455 381 C554 389 662 372 756 333 L725 614 C720 659 690 685 646 702 C605 717 554 722 511 722 C464 722 407 714 368 699 C331 684 307 661 298 619 Z" fill="url(#cupGradient)"/>
+    <path d="M337 729 C377 741 439 750 506 750 C574 750 635 742 685 727 C671 767 626 794 577 810 C521 827 465 817 420 797 C382 780 352 755 337 729 Z" fill="url(#cupGradient)"/>
+    <path d="M254 405 C214 428 176 473 161 515 C142 569 155 614 199 651 C244 688 314 715 394 733 C469 750 542 753 597 737 C641 725 676 704 703 681 C713 673 724 680 719 691 C704 715 661 734 614 747 C557 764 474 763 392 747 C302 730 224 699 175 658 C135 625 118 587 127 544 C137 490 179 434 247 405 C252 403 257 400 260 399 C268 396 270 403 254 405 Z" fill="url(#leafGradient)"/>
+    <path d="M744 688 C750 633 770 585 805 552 C842 517 889 489 917 429 C930 477 932 529 915 576 C895 633 830 679 744 688 Z M747 683 C782 621 827 558 887 491 C850 547 804 614 768 672 C760 681 751 685 747 683 Z" fill="url(#leafGradient)" fill-rule="evenodd"/>
+    <path d="M512 459 C499 481 460 539 450 581 C438 614 445 643 465 659 C490 680 522 682 547 666 C572 650 583 621 573 592 C562 555 532 492 512 459 Z" fill="url(#waterGradient)"/>
+    <path d="M533 570 C540 588 540 607 532 622 C526 634 517 642 507 646" fill="none" stroke="#E0F2FE" stroke-width="14" stroke-linecap="round"/>
+  </g>
+</svg>

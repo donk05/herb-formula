@@ -36,7 +36,23 @@ for _name in _CJK_FONTS:
         break
 plt.rcParams["axes.unicode_minus"] = False
 
-st.set_page_config(page_title="药食同源智能配方", page_icon="🌿", layout="wide")
+_FAVICON_PATH = os.path.join(_project_root, "assets", "huiyin_favicon.png")
+
+
+def _svg_data_uri(rel_path: str) -> str:
+    """读 assets 下的 SVG 并转成 data URI，用于内联品牌图标（矢量、透明，不被图片处理改写）。"""
+    try:
+        with open(os.path.join(_project_root, rel_path), "rb") as _f:
+            return "data:image/svg+xml;base64," + base64.b64encode(_f.read()).decode()
+    except Exception:
+        return ""
+
+
+st.set_page_config(
+    page_title="药食同源智能配方",
+    page_icon=_FAVICON_PATH if os.path.exists(_FAVICON_PATH) else "🌿",
+    layout="wide",
+)
 
 # ==================== CSS ====================
 st.markdown("""<style>
@@ -334,7 +350,10 @@ hr, [data-testid="stDivider"] { border: 0 !important; height: 1px !important; ba
 /* Product navigation and hero */
 .product-nav { display:flex; align-items:center; gap:1rem; padding:.5rem 0 1.3rem; }
 .brand-mark { color: var(--ink); font-size:1.18rem; font-weight:800; letter-spacing:-.03em; white-space:nowrap; }
-.brand-mark span { color: var(--primary); }
+.brand-mark img { height:30px; width:30px; margin-right:9px; vertical-align:middle; }
+.brand-mark .brand-cn { color: var(--ink); }
+.brand-mark .brand-sep { color: var(--muted); font-weight:400; margin:0 .45rem; }
+.brand-mark .brand-en { color: var(--primary); }
 .nav-links { display:flex; justify-content:center; gap:1.5rem; flex:1; }
 .nav-links a { color:#6B7280 !important; text-decoration:none; font-size:.88rem; transition:color .2s ease; }
 .nav-links a:hover { color:var(--primary) !important; }
@@ -1064,7 +1083,15 @@ if "pending_disease_search" in st.session_state:
 
 nav_brand, nav_links, nav_action = st.columns([2.2, 5.8, 1.5], vertical_alignment="center")
 with nav_brand:
-    st.markdown('<div class="brand-mark">🌿 Drink <span>AI</span></div>', unsafe_allow_html=True)
+    _brand_logo = _svg_data_uri("assets/huiyin_logo.svg")
+    _brand_icon = f'<img src="{_brand_logo}" alt="慧饮"/>' if _brand_logo else "🌿 "
+    st.markdown(
+        f'<div class="brand-mark">{_brand_icon}'
+        f'<span class="brand-cn">慧饮</span>'
+        f'<span class="brand-sep">|</span>'
+        f'<span class="brand-en">Drink AI</span></div>',
+        unsafe_allow_html=True,
+    )
 with nav_links:
     st.markdown(
         '<div class="nav-links">'
