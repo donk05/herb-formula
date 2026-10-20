@@ -13,4 +13,5 @@ output/
 .streamlit/secrets.toml
 data/literature.db
 data/chroma_db/
+data/drink_pdfs/
 data/*.zip
