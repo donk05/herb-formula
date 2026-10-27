@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 import matplotlib.pyplot as plt
 import numpy as np
 from io import BytesIO
-import json, time, urllib.request, urllib.error, base64, sqlite3, zipfile, shutil
+import json, time, urllib.request, urllib.error, base64, sqlite3, zipfile, shutil, zlib
 import threading
 from difflib import SequenceMatcher
 from src.data_loader import GraphDataLoader, CN_TO_EN_DISEASE
@@ -760,8 +760,66 @@ def _load_drink_chroma():
         return None
 
 
+_MEDICAL_DIR = os.path.join(_project_root, "data", "chroma_db_medical_consultation")
+
+
+class _MedicalConsultationStore:
+    """问诊问答检索：FAISS(int8) 存向量 + SQLite 存正文，不依赖 Chroma。"""
+
+    def __init__(self, dir_path: str):
+        import faiss
+        with open(os.path.join(dir_path, "faiss.index"), "rb") as f:
+            buf = np.frombuffer(f.read(), dtype="uint8")
+        self._index = faiss.deserialize_index(buf)
+        self._conn = sqlite3.connect(
+            os.path.join(dir_path, "medical.sqlite"), check_same_thread=False
+        )
+        self._embeddings = _get_rag_embeddings()
+        self._lock = threading.Lock()
+
+    def similarity_search(self, query: str, k: int = 3):
+        vec = np.asarray(self._embeddings.embed_query(query), dtype="float32").reshape(1, -1)
+        scores, idxs = self._index.search(vec, k)
+        results = []
+        with self._lock:
+            for score, idx in zip(scores[0], idxs[0]):
+                if idx < 0:
+                    continue
+                row = self._conn.execute(
+                    "SELECT question_id, question, answers FROM qa WHERE id=?",
+                    (int(idx),),
+                ).fetchone()
+                if row is None:
+                    continue
+                try:
+                    answers = json.loads(zlib.decompress(row[2]))
+                except Exception:
+                    answers = []
+                parts = [f"问题：{row[1]}"]
+                for ans in answers[:3]:
+                    parts.append(f"回答：{ans[:300]}")
+                results.append(
+                    {
+                        "content": "\n".join(parts)[:800],
+                        "book_name": f"问诊记录 #{row[0]}",
+                        "score": float(score),
+                    }
+                )
+        return results
+
+
+@st.cache_resource(show_spinner=False)
+def _load_medical_store():
+    if not os.path.isfile(os.path.join(_MEDICAL_DIR, "faiss.index")):
+        return None
+    try:
+        return _MedicalConsultationStore(_MEDICAL_DIR)
+    except Exception:
+        return None
+
+
 def retrieve_ancient_books(query: str, k: int = 3):
-    """同时检索古籍库 + 方剂库 + 养生库 + 饮料知识库，合并返回"""
+    """同时检索古籍库 + 方剂库 + 养生库 + 饮料知识库 + 问诊问答库，合并返回"""
     global _RAG_ERROR_MSG
     results = []
 
@@ -819,22 +877,32 @@ def retrieve_ancient_books(query: str, k: int = 3):
         except Exception as e:
             _RAG_ERROR_MSG = f"❌ 饮料库检索失败: {type(e).__name__} - {str(e)[:200]}"
 
+    # 问诊问答库（FAISS + SQLite）
+    mdb = _load_medical_store()
+    if mdb is not None:
+        try:
+            results.extend(mdb.similarity_search(query, k=k))
+        except Exception as e:
+            _RAG_ERROR_MSG = f"❌ 问诊库检索失败: {type(e).__name__} - {str(e)[:200]}"
+
     return results
 
 
 def prewarm_rag_resources():
     """在图谱结果页提前初始化 RAG 资源，避免首次提交问题时才冷启动。"""
-    # 先显式初始化 embedding 模型，再初始化四个 Chroma 实例；这些函数本身也有资源缓存。
+    # 先显式初始化 embedding 模型，再初始化各知识库；这些函数本身也有资源缓存。
     _get_rag_embeddings()
     ancient_db = load_rag_db()
     fangji_db = _load_fangji_chroma()
     yangsheng_db = _load_yangsheng_chroma()
     drink_db = _load_drink_chroma()
+    medical_db = _load_medical_store()
     return {
         "ancient": ancient_db is not None,
         "fangji": fangji_db is not None,
         "yangsheng": yangsheng_db is not None,
         "drink": drink_db is not None,
+        "medical": medical_db is not None,
     }
 
 
@@ -1234,7 +1302,7 @@ if not st.session_state.query_active:
     empty_cards = [
         ("🧬", "知识图谱检索", "查看疾病关联靶点、化合物和药食同源中药的证据链。"),
         ("📚", "文献证据", "在中药卡片中查看 PubMed 与知网文献摘要和原文入口。"),
-        ("📜", "古籍 RAG 问答", "结合古籍、方剂、养生与饮料知识库，获得日常膳食科普建议。"),
+        ("📜", "古籍 RAG 问答", "结合古籍、方剂、养生、饮料与问诊知识库，获得日常膳食科普建议。"),
     ]
     for card_col, (icon, title, desc) in zip(empty_cols, empty_cards):
         with card_col:
@@ -1337,7 +1405,7 @@ st.caption(f"按靶点覆盖度排序，共 {stats['相关中药数']} 种药食
 # 在中药卡片渲染前确保文献库已下载，避免卡片查询缓存到空结果
 _ensure_literature_db()
 
-# 进入结果页后在后台预热向量模型与四个知识库，避免用户首次提交问题时才冷启动。
+# 进入结果页后在后台预热向量模型与五个知识库，避免用户首次提交问题时才冷启动。
 rag_prewarm_state = start_rag_prewarm()
 
 left_col, right_col = st.columns([5, 4], gap="large")
@@ -1569,7 +1637,7 @@ with portal_left:
     )
 with portal_right:
     portal_diet_clicked = st.button(
-        "🍵  获取专属药膳方案\n\n结合古籍、方剂、养生与饮料知识库，向食养助手提问",
+        "🍵  获取专属药膳方案\n\n结合古籍、方剂、养生、饮料与问诊知识库，向食养助手提问",
         key="portal_diet",
         use_container_width=True,
     )
@@ -1609,7 +1677,7 @@ if st.session_state.get("portal_lifestyle_result"):
                 st.markdown("**需要留意**：" + "；".join(precautions))
         st.caption("本内容仅为日常膳食与生活科普，不作为临床医疗诊断依据；如有不适请及时就医。")
 
-# ==================== Spotlight 对话入口（接入现有四库 RAG + DeepSeek） ====================
+# ==================== Spotlight 对话入口（接入现有五库 RAG + DeepSeek） ====================
 
 if "spotlight_query" not in st.session_state:
     st.session_state.spotlight_query = ""
@@ -1635,7 +1703,7 @@ if spotlight_submitted and spotlight_query.strip():
     if rag_thread is not None and rag_thread.is_alive():
         with st.spinner("📚 正在完成食养知识库首次准备…"):
             rag_thread.join()
-    with st.spinner("正在检索古籍、方剂、养生与饮料知识库…"):
+    with st.spinner("正在检索古籍、方剂、养生、饮料与问诊知识库…"):
         rag_docs = retrieve_ancient_books(user_query, k=3)
         st.session_state.diet_rag_docs = rag_docs
         rag_context = "\n\n".join(

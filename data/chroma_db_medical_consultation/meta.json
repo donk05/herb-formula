@@ -1,0 +1,9 @@
+{
+  "model": "BAAI/bge-small-zh-v1.5",
+  "dim": 512,
+  "metric": "inner_product",
+  "index_type": "IndexScalarQuantizer(QT_8bit)",
+  "count": 120000,
+  "embed_answers": 3,
+  "version": 1
+}
